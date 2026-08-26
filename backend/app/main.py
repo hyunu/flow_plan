@@ -9,6 +9,13 @@ from app import models  # noqa: F401  (모델 등록)
 
 Base.metadata.create_all(bind=engine)
 
+# 첫 실행 시 DB가 비어 있으면 시드 데이터 자동 생성 (멱등)
+if settings.seed_on_startup:
+    from app.core.database import SessionLocal as _SL
+    from app.seed import seed as _seed
+
+    _seed(_SL())
+
 app = FastAPI(
     title=settings.app_name,
     version="0.2.0",

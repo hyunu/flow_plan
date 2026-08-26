@@ -23,17 +23,19 @@ AI가 **일정 계산**이 아닌 **해석·질문·보고**를 담당하는 프
 
 ## 시작하기
 
+> **체크아웃 후 가장 빠른 실행**: `make setup` 후 터미널 2개에서 `make backend` + `make frontend`
+> 백엔드 첫 기동 시 DB가 비어 있으면 **시드 데이터가 자동 생성**됩니다(멱등). 별도 시드 명령 불필요.
+
 ### Backend
 
 ```bash
 cd backend
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
-python -m app.seed          # 시드 데이터 (3개 상세 프로젝트, 211 tasks)
-uvicorn app.main:app --port 8000
+uvicorn app.main:app --port 8000    # 첫 실행 시 시드 데이터 자동 생성
 ```
 
-- **DB 위치**: 로컬 SQLite는 `backend/data/flow_plan.db`에 저장됩니다. 초기화하려면 이 파일을 삭제 후 `python -m app.seed` 재실행.
+- **DB 위치**: 로컬 SQLite는 `backend/data/flow_plan.db`에 저장됩니다. 초기화하려면 이 파일을 삭제 후 재기동(`make reset`).
 - API 문서: http://localhost:8000/docs (Swagger UI)
 - AI 연동 시 `.env`에 `AI_PROVIDER=openai` + `OPENAI_API_KEY=...` 설정 (`backend/.env.example` 참조)
   (미설정 시 `mock` 프로바이더로 동작)

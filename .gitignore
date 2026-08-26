@@ -18,6 +18,9 @@ dist/
 .env.*
 !.env.example
 
+# 시드된 데모 DB는 커밋하여 체크아웃 후 바로 사용 가능하도록 허용
+!backend/data/flow_plan.db
+
 # OS
 .DS_Store
 
