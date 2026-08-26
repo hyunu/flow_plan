@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Node / Frontend
+node_modules/
+dist/
+*.local
+
+# DB / 환경 / 비밀
+*.db
+*.sqlite3
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+
+# 임시/테스트 산출물
+/tmp/
+*.log
