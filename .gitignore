@@ -24,3 +24,5 @@ dist/
 # 임시/테스트 산출물
 /tmp/
 *.log
+# TS build info
+*.tsbuildinfo
