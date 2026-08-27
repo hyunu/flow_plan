@@ -41,16 +41,16 @@ export function TaskTable({ tasks, userId, onSelect, onUserChange }: Props) {
 
   const { rows: allRows, hasChildren, childCounts } = useMemo(() => buildGroupedTaskTree(tasks, collapsed), [tasks, collapsed])
 
-  // 그룹별 Task 수
+  // 그룹별 Task 수 (접기와 무관하게 원본 기준 — 접힌 그룹도 실제 개수 표시)
   const groupCount = useMemo(() => {
     const m = new Map<number, number>()
-    let cur: number | null = null
     for (const r of allRows) {
-      if (r.kind === 'group') cur = r.gid
-      else if (cur != null) m.set(cur, (m.get(cur) || 0) + 1)
+      if (r.kind !== 'group') continue
+      const name = r.name
+      m.set(r.gid, tasks.filter((t) => (t.group_name || '기타') === name).length)
     }
     return m
-  }, [allRows])
+  }, [allRows, tasks])
 
   // 필터: 태스크는 조건, 그룹은 표시된 태스크가 있는 경우만 유지 (DFS 순서 유지)
   const filtered = useMemo(() => {
@@ -71,11 +71,15 @@ export function TaskTable({ tasks, userId, onSelect, onUserChange }: Props) {
       if (r.kind === 'group') curGroup = r.gid
       else if (match(r.task)) visibleGroups.add(curGroup ?? -1)
     }
+    // 접힌 그룹은 행을 유지해야 펼치기 가능 → 강제 포함 (사라지지 않게)
+    for (const r of allRows) {
+      if (r.kind === 'group' && collapsed.has(r.gid)) visibleGroups.add(r.gid)
+    }
     return allRows.filter((r) => {
       if (r.kind === 'group') return visibleGroups.has(r.gid)
       return match(r.task)
     })
-  }, [allRows, query, statusFilter, userFilter])
+  }, [allRows, query, statusFilter, userFilter, collapsed])
 
   const statuses = ['all', 'not_started', 'in_progress', 'delayed', 'blocked', 'completed']
 
