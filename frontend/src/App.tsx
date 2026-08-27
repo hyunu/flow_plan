@@ -9,6 +9,7 @@ import { Schedule } from './pages/Schedule'
 import { TaskDetail } from './pages/TaskDetail'
 import { Challenges } from './pages/Challenges'
 import { Reports } from './pages/Reports'
+import { Settings } from './pages/Settings'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { user, loaded } = useAuth()
@@ -20,6 +21,12 @@ function Protected({ children }: { children: React.ReactNode }) {
     )
   }
   if (!user) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+function AdminOnly({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth()
+  if (user?.role_name !== 'System Administrator') return <Navigate to="/projects" replace />
   return <>{children}</>
 }
 
@@ -46,6 +53,7 @@ export default function App() {
         <Route path="/tasks/:id" element={<TaskDetail />} />
         <Route path="/challenges" element={<Challenges />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/settings" element={<AdminOnly><Settings /></AdminOnly>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { http } from '../api/client'
 import type { DailyReport, Project } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
-import { IconReport } from '../components/icons'
+import { IconMail, IconReport } from '../components/icons'
 
 interface WeeklyReport {
   id: number
@@ -22,6 +22,8 @@ export function Reports() {
   const [selProject, setSelProject] = useState<number>(0)
   const [tab, setTab] = useState<'daily' | 'weekly'>('daily')
   const [busy, setBusy] = useState(false)
+  const [sendMsg, setSendMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const canSend = user?.role_name === 'System Administrator' || user?.role_name === 'Project Manager'
 
   const loadDaily = () => {
     http.get<DailyReport[]>('/reports/daily').then(setDaily).catch(() => {})
@@ -69,6 +71,35 @@ export function Reports() {
     }
   }
 
+  const sendDaily = async () => {
+    setBusy(true)
+    setSendMsg(null)
+    try {
+      const r = await http.post<{ sent: number; recipients: string[] }>('/reports/daily/send')
+      setSendMsg({ ok: true, text: `${r.sent}명의 개발자에게 데일리 리포트를 이메일 발송했습니다.` })
+      loadDaily()
+    } catch (e) {
+      setSendMsg({ ok: false, text: e instanceof Error ? e.message : '발송 실패' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const sendWeekly = async () => {
+    if (!selProject) return
+    setBusy(true)
+    setSendMsg(null)
+    try {
+      const r = await http.post<{ sent: number; recipients: string[] }>(`/reports/weekly/send/${selProject}`)
+      setSendMsg({ ok: true, text: `${r.sent}명의 관리자에게 위클리 리포트를 이메일 발송했습니다.` })
+      loadWeekly(selProject)
+    } catch (e) {
+      setSendMsg({ ok: false, text: e instanceof Error ? e.message : '발송 실패' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-5 animate-fade-in">
       <div className="flex items-center gap-3">
@@ -100,11 +131,18 @@ export function Reports() {
 
       {tab === 'daily' && (
         <>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {canSend && (
+              <button className="btn-secondary" onClick={sendDaily} disabled={busy}>
+                <IconMail size={15} />
+                {busy ? '발송 중...' : '개발자에게 이메일 발송'}
+              </button>
+            )}
             <button className="btn-primary" onClick={genDaily} disabled={busy}>
               {busy ? '생성 중...' : '+ Daily Report 생성'}
             </button>
           </div>
+          {sendMsg && <div className={`card p-3 text-sm ${sendMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>{sendMsg.text}</div>}
           {daily.length === 0 ? (
             <div className="card p-14 text-center text-sm text-slate-400">아직 리포트가 없습니다</div>
           ) : (
@@ -143,11 +181,18 @@ export function Reports() {
                 ))}
               </select>
             </div>
+            {canSend && (
+              <button className="btn-secondary" onClick={sendWeekly} disabled={busy || !selProject}>
+                <IconMail size={15} />
+                {busy ? '발송 중...' : '관리자에게 이메일 발송'}
+              </button>
+            )}
             <button className="btn-primary" onClick={genWeekly} disabled={busy || !isManager || !selProject}>
               {busy ? '생성 중...' : '+ Weekly Report 생성'}
             </button>
             {!isManager && <div className="text-xs text-slate-400 mb-1">관리자 전용</div>}
           </div>
+          {sendMsg && <div className={`card p-3 text-sm ${sendMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>{sendMsg.text}</div>}
 
           {weekly.length === 0 ? (
             <div className="card p-14 text-center text-sm text-slate-400">주간 리포트가 없습니다</div>

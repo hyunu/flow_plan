@@ -4,6 +4,7 @@ import { http } from '../api/client'
 import type { Project } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { IconChevronRight } from '../components/icons'
+import { SkeletonCard, SkeletonText } from '../components/Skeleton'
 
 export function Projects() {
   const { user } = useAuth()
@@ -75,7 +76,19 @@ export function Projects() {
       {error && <div className="card p-4 text-sm text-red-600">{error}</div>}
 
       {loading ? (
-        <div className="text-slate-400 py-10 text-center">불러오는 중...</div>
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div className="space-y-2">
+              <SkeletonText w="w-40" className="h-6" />
+              <SkeletonText w="w-56" />
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonCard key={i} className="h-36" />
+            ))}
+          </div>
+        </div>
       ) : projects.length === 0 ? (
         <div className="card p-16 text-center">
           <div className="text-4xl mb-3">📂</div>

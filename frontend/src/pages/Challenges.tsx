@@ -4,6 +4,7 @@ import { http } from '../api/client'
 import type { Challenge } from '../api/types'
 import { IconChevronRight, IconChallenge } from '../components/icons'
 import { PriorityBadge } from '../components/ui'
+import { SkeletonText } from '../components/Skeleton'
 
 export function Challenges() {
   const navigate = useNavigate()
@@ -72,7 +73,18 @@ export function Challenges() {
       </div>
 
       {loading ? (
-        <div className="text-slate-400 py-10 text-center">불러오는 중...</div>
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="card p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <SkeletonText w="w-20" />
+                <SkeletonText w="w-24" />
+              </div>
+              <SkeletonText w="w-full" />
+              <SkeletonText w="w-5/6" className="mt-1" />
+            </div>
+          ))}
+        </div>
       ) : sorted.length === 0 ? (
         <div className="card p-14 text-center text-sm text-slate-400">
           <div className="text-3xl mb-3">🎯</div>

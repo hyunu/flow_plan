@@ -199,11 +199,11 @@ def generate_daily_report(db: Session, user: User, today: date | None = None) ->
         )
     facts = json.dumps(sections, ensure_ascii=False, default=str)
     prompt = (
-        f"사용자별 Daily Report를 생성하세요. 구조화된 JSON으로 다음을 포함:\n"
-        f"- 오늘의 일정 상태 요약\n- 주의/지연 Task와 원인\n- 오늘의 주요 업무\n- 다음 작업\n"
-        f"- 사용자에게 요청할 입력\n\n데이터:\n{facts}"
+        f"아래 사용자 담당 데이터를 바탕으로 사용자별 Daily Report 본문을 한국어로 작성하세요.\n"
+        f"오늘의 일정 상태 요약, 주의/지연 Task와 원인, 오늘의 주요 업무, 다음 작업, "
+        f"사용자에게 요청할 입력을 포함하세요.\n\n[데이터]\n{facts}"
     )
-    content = provider.generate(prompt, system="당신은 프로젝트 일정 관리 시스템의 일일 보고서 생성 AI입니다.", max_tokens=800)
+    content = provider.generate(prompt, system="당신은 프로젝트 일정 관리 시스템의 일일 보고서 작성 AI입니다. 주어진 데이터만 근거로 사용하세요.", max_tokens=1200)
     report = DailyReport(user_id=user.id, report_date=today, content=content)
     db.add(report)
     db.commit()
@@ -238,12 +238,13 @@ def generate_weekly_report(db: Session, project: Project, week_start: date | Non
     }
 
     prompt = (
-        f"관리자용 Weekly Report를 생성하세요. 다음을 포함하는 구조화된 텍스트(마크다운):\n"
-        f"## Project Summary / ## KPI / ## 주요 지연 원인(사용자 의견 기반) / ## 주요 Issue / "
-        f"## 사용자 의견 / ## AI Forecast(예상 완료일, 지연 가능성 높은 Task, 위험 요소, 권장 대책)\n\n"
-        f"KPI 데이터:\n{json.dumps(kpi, ensure_ascii=False)}\n\n프로젝트 사실:\n{facts}"
+        f"아래 프로젝트 데이터를 바탕으로 관리자용 Weekly Report 본문을 한국어 마크다운으로 작성하세요.\n"
+        f"반드시 다음 섹션을 포함하고, 각 섹션에 제공된 실제 데이터를 채워 넣으세요(템플릿/안내문이 아닌 보고서 본문):\n"
+        f"## Project Summary\n## KPI\n## 주요 지연 원인\n## 주요 Issue\n## 사용자 의견\n## AI Forecast\n\n"
+        f"[KPI 데이터]\n{json.dumps(kpi, ensure_ascii=False)}\n\n"
+        f"[프로젝트 사실]\n{facts}"
     )
-    content = provider.generate(prompt, system="당신은 프로젝트 관리 담당 관리자를 위한 주간 보고서 AI입니다. 사실/의견/예측을 구분하고, AI 예측/권고로 표시하세요.", max_tokens=1600)
+    content = provider.generate(prompt, system="당신은 프로젝트 관리 담당 관리자를 위한 주간 보고서 작성 AI입니다. 주어진 데이터만 근거로 사용하고, 추측은 'AI 예측'/'AI 권고'로 표시하세요.", max_tokens=2500)
     report = WeeklyReport(project_id=project.id, week_start=week_start, content=content)
     db.add(report)
     db.commit()
@@ -255,12 +256,13 @@ def analyze_project_risk(db: Session, project: Project) -> AIAnalysis:
     result = compute_project_schedule(db, project, date.today())
     facts = build_project_facts(project, result, db)
     prompt = (
-        f"프로젝트 위험 분석을 수행하세요. 다음을 JSON으로 반환:\n"
-        f"- overall_risk: HIGH/WARNING/NORMAL\n"
-        f"- risks: [{{ 'task_id', 'task_title', 'risk', 'type': 'system_calc|user_opinion|ai_prediction' }}]\n"
-        f"- recommendations: [대책 목록]\n\n{facts}"
+        f"아래 프로젝트 데이터를 바탕으로 위험 분석을 수행하세요.\n"
+        f"JSON만 반환하세요(마크다운 코드블록 없이, key/value만):\n"
+        f"- overall_risk: HIGH/WARNING/NORMAL 중 하나\n"
+        f"- risks: [{{'task_id': 번호, 'task_title': '제목', 'risk': '설명', 'type': 'system_calc|user_opinion|ai_prediction'}}]\n"
+        f"- recommendations: ['대책 목록']\n\n{facts}"
     )
-    content = provider.generate(prompt, system="프로젝트 위험 분석 AI. 결정적 계산 결과를 근거로 하고, 추측은 ai_prediction으로 표시.", max_tokens=1000)
+    content = provider.generate(prompt, system="프로젝트 위험 분석 AI. 결정적 계산 결과를 근거로 하고, 추측은 ai_prediction으로 표시.", max_tokens=1200)
     analysis = AIAnalysis(
         project_id=project.id,
         analysis_type="risk",

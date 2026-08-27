@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { Dependency, Task } from '../api/types'
-import { TreeToggle, buildTaskTree } from '../lib/taskTree'
+import { TreeConnector, TreeToggle, buildTaskTree, type TaskRow } from '../lib/taskTree'
 import { IconLayout } from './icons'
 
 const DAY = 86400000
@@ -26,7 +26,7 @@ function parse(d?: string | null): number | null {
 interface RenderRow {
   kind: 'group' | 'task'
   label?: string
-  row?: { task: Task; depth: number }
+  row?: TaskRow
   tint?: string
 }
 
@@ -41,7 +41,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
       return next
     })
 
-  const { rows, hasChildren } = useMemo(() => buildTaskTree(tasks, collapsed), [tasks, collapsed])
+  const { rows, hasChildren, childCounts } = useMemo(() => buildTaskTree(tasks, collapsed), [tasks, collapsed])
 
   // 그룹 밴드 + 표시 행 레이아웃
   const renderRows = useMemo<RenderRow[]>(() => {
@@ -214,7 +214,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                 title={r.row!.task.title}
               >
                 <span className="text-[10px] text-slate-300 w-5 shrink-0">
-                  {r.row!.task.is_issue ? '⚠' : r.row!.depth > 0 ? '└' : ''}
+                  {r.row!.task.is_issue ? '⚠' : ''}
                 </span>
                 <TreeToggle
                   taskId={r.row!.task.id}
@@ -222,14 +222,17 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                   collapsed={collapsed.has(r.row!.task.id)}
                   onToggle={toggle}
                 />
+                <TreeConnector guides={r.row!.guides} isLast={r.row!.isLast} />
                 <span
                   className={`truncate ${
-                    r.row!.depth === 0 ? 'text-[13px] font-semibold text-ink-900' : 'text-[13px] text-ink-700'
+                    r.row!.depth === 0 ? 'text-[13px] font-semibold text-ink-900' : 'text-[13px] font-medium text-ink-700'
                   }`}
-                  style={{ paddingLeft: r.row!.depth * 14 }}
                 >
                   {r.row!.task.title}
                 </span>
+                {hasChildren.has(r.row!.task.id) && (
+                  <span className="shrink-0 text-[10px] text-slate-400">({childCounts.get(r.row!.task.id)})</span>
+                )}
                 {r.row!.task.is_critical && (
                   <span className="ml-auto shrink-0 badge bg-red-50 text-red-500 ring-1 ring-red-200">CP</span>
                 )}

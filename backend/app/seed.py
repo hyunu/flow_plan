@@ -16,6 +16,7 @@ from app.core.database import Base, SessionLocal, engine
 from app.core.security import hash_password
 from app.models.entities import (
     Challenge,
+    EmailConfig,
     Forecast,
     Group,
     Milestone,
@@ -33,6 +34,7 @@ from app.models.entities import (
     User,
     UserCalendar,
     UserCalendarEntry,
+    UserReportSetting,
 )
 from app.services.schedule_service import apply_engine_progress
 
@@ -733,6 +735,20 @@ def seed(db: Session) -> None:
                        task_id=task_id, priority=prio, category="delay", message=msg, created_by="ai")
         db.add(ch)
         db.add(Notification(user_id=users[user_key].id, channel="web", type="challenge", title=f"[{prio}] Daily Challenge", body=msg, link=f"/tasks/{task_id}"))
+
+    # 이메일 설정(기본 비활성 — 관리자 페이지에서 설정)
+    db.add(EmailConfig(smtp_host="", smtp_port=587, smtp_user=None, smtp_password=None,
+                       from_email="no-reply@flowplan.dev", from_name="Flow Plan", use_tls=True, enabled=False))
+
+    # 사용자별 리포트 발송 권한 (기본: 멤버→데일리, 관리자→위클리)
+    for key, u in users.items():
+        role = u.role.name if u.role else ""
+        if key == "admin":
+            db.add(UserReportSetting(user_id=u.id, deliver_daily=False, deliver_weekly=True))
+        elif role == "Project Manager":
+            db.add(UserReportSetting(user_id=u.id, deliver_daily=False, deliver_weekly=True))
+        else:
+            db.add(UserReportSetting(user_id=u.id, deliver_daily=True, deliver_weekly=False))
 
     db.commit()
 

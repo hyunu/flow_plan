@@ -1,5 +1,5 @@
 from app.ai.base import AIProvider, MockAIProvider
-from app.ai.providers import AnthropicProvider, ClovaProvider, OpenAIProvider, get_ai_provider
+from app.ai.providers import AnthropicProvider, ClovaProvider, GeminiProvider, OpenAIProvider, get_ai_provider
 
 __all__ = [
     "AIProvider",
@@ -7,5 +7,6 @@ __all__ = [
     "OpenAIProvider",
     "AnthropicProvider",
     "ClovaProvider",
+    "GeminiProvider",
     "get_ai_provider",
 ]

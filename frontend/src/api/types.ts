@@ -206,3 +206,26 @@ export interface Notification {
   is_read: boolean
   created_at: string
 }
+
+export interface EmailSettings {
+  id: number
+  smtp_host: string
+  smtp_port: number
+  smtp_user?: string
+  has_smtp_password: boolean
+  from_email: string
+  from_name: string
+  use_tls: boolean
+  enabled: boolean
+}
+
+export interface UserSetting {
+  user_id: number
+  username: string
+  name: string
+  email: string
+  role: string
+  is_active: boolean
+  deliver_daily: boolean
+  deliver_weekly: boolean
+}

@@ -66,7 +66,7 @@ uvicorn app.main:app --port 8000    # 첫 실행 시 시드 데이터 자동 생
 ```bash
 cd frontend
 npm install
-npm run dev                 # http://localhost:5173
+npm run dev                 # http://localhost:5174
 ```
 
 ## 테스트
@@ -99,6 +99,14 @@ pytest tests/ -q            # 보안(18) + 일정 엔진(9) = 27개
 
 - **프로젝트 목록** `/projects` — 참여 프로젝트, 생성
 - **현황판(Dashboard)** `/projects/:id` — KPI, AI 요약, 진척곡선, Milestone, 지연/CP/Issue, 사용자 작업량, 최근 변경
-- **전체 일정** `/projects/:id/schedule` — **간트**(하위 Task 접기/펼치기, Baseline/계획/진척/예측/Critical Path) ↔ **테이블**(검색/상태 필터) 전환
+- **전체 일정** `/projects/:id/schedule` — **간트**(하위 Task 접기/펼치기, Baseline/계획/진척/예측/Critical Path) ↔ **테이블**(그룹·Task 트리, 검색/담당자/상태 필터) 전환
 - **Task 상세** `/tasks/:id` — 일정 4중 비교, 진척 보정, 진행기록, 변경 이력
 - **Daily Challenge** `/challenges`, **리포트** `/reports`
+- **관리자 설정** `/settings` (SysAdmin 전용) — 이메일(SMTP) 설정, 사용자별 리포트 발송 권한
+
+## 리포트 이메일 발송
+
+- **개발자(Project Member)** → Daily 리포트, **관리자(PM/SysAdmin)** → Weekly 리포트 발송
+- 개발 단계: `/reports` 페이지의 **"이메일 발송" 버튼**으로 수동 발송
+- 관리자 설정 페이지에서 SMTP(호스트/포트/계정/From)를 설정하고, 사용자별 데일리/위클리 수신 권한을 조정
+- AI 쿼터(429) 발생 시 자동 재시도/백오프, 리포트가 이미 있으면 재사용

@@ -444,3 +444,34 @@ class RefreshToken(Base):
     ip_address: Mapped[str | None] = mapped_column(String(64))
 
     user: Mapped[User] = relationship()
+
+
+class EmailConfig(Base):
+    """이메일(SMTP) 발송 설정 — 관리자 페이지에서 관리한다."""
+
+    __tablename__ = "email_config"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    smtp_host: Mapped[str] = mapped_column(String(255), default="")
+    smtp_port: Mapped[int] = mapped_column(Integer, default=587)
+    smtp_user: Mapped[str | None] = mapped_column(String(255))
+    smtp_password: Mapped[str | None] = mapped_column(String(255))
+    from_email: Mapped[str] = mapped_column(String(255), default="no-reply@flowplan.dev")
+    from_name: Mapped[str] = mapped_column(String(100), default="Flow Plan")
+    use_tls: Mapped[bool] = mapped_column(Boolean, default=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class UserReportSetting(Base):
+    """사용자별 리포트 이메일 발송 권한 — 관리자 페이지에서 관리한다."""
+
+    __tablename__ = "user_report_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False, index=True)
+    deliver_daily: Mapped[bool] = mapped_column(Boolean, default=False)
+    deliver_weekly: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user: Mapped[User] = relationship()

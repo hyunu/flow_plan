@@ -18,13 +18,15 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
 
     # AI Provider
-    ai_provider: str = "openai"  # openai | anthropic | clova | mock
+    ai_provider: str = "openai"  # openai | anthropic | clova | gemini | mock
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-3-5-haiku-latest"
     clova_api_key: str | None = None
     clova_gateway_url: str | None = None
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-3.6-flash"
     ai_timeout_seconds: int = 60
 
 

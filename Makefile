@@ -10,7 +10,7 @@ seed:             ## 시드 데이터 생성 (보통은 서버 기동 시 자동
 backend:          ## 백엔드 실행 → http://localhost:8000
 	cd backend && .venv/bin/uvicorn app.main:app --port 8000
 
-frontend:         ## 프론트 실행 → http://localhost:5173
+frontend:         ## 프론트 실행 → http://localhost:5174
 	cd frontend && npm run dev
 
 test:             ## 백엔드 테스트 (27개)

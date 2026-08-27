@@ -81,7 +81,9 @@ def refresh(body: RefreshRequest, request: Request = None, db: Session = Depends
 
 @router.get("/me", response_model=UserRead)
 def me(user: User = Depends(get_current_user)):
-    return user
+    data = UserRead.model_validate(user)
+    data.role_name = user.role.name if user.role else None
+    return data
 
 
 @router.post("/logout")

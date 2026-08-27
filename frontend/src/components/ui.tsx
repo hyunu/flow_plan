@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 export function StatCard({
   label,
   value,
@@ -5,6 +7,7 @@ export function StatCard({
   icon,
   tone = 'default',
   delta,
+  to,
 }: {
   label: string
   value: React.ReactNode
@@ -12,6 +15,7 @@ export function StatCard({
   icon?: React.ReactNode
   tone?: 'default' | 'danger' | 'warn' | 'ok'
   delta?: { text: string; dir: 'up' | 'down' | 'flat' }
+  to?: string
 }) {
   const tones: Record<string, { text: string; chip: string }> = {
     default: { text: 'text-ink-900', chip: 'bg-surface-100 text-ink-500' },
@@ -19,8 +23,8 @@ export function StatCard({
     warn: { text: 'text-amber-600', chip: 'bg-amber-50 text-amber-500' },
     ok: { text: 'text-emerald-600', chip: 'bg-emerald-50 text-emerald-500' },
   }
-  return (
-    <div className="card p-5 hover:shadow-lift transition-shadow">
+  const inner = (
+    <>
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-slate-400">{label}</span>
         {icon && <span className={`w-8 h-8 rounded-lg grid place-items-center ${tones[tone].chip}`}>{icon}</span>}
@@ -38,8 +42,24 @@ export function StatCard({
         )}
       </div>
       {sub && <div className="mt-1.5 text-xs text-slate-400">{sub}</div>}
-    </div>
+    </>
   )
+  const cls = 'card p-5 transition-shadow'
+  if (to) {
+    return (
+      <Link
+        to={to}
+        className={`${cls} hover:shadow-lift hover:ring-brand-200 group`}
+        title={`${label} 상세 보기`}
+      >
+        {inner}
+        <div className="mt-2 text-[11px] text-brand-600 opacity-0 group-hover:opacity-100 transition-opacity">
+          상세 보기 →
+        </div>
+      </Link>
+    )
+  }
+  return <div className={`${cls} hover:shadow-lift`}>{inner}</div>
 }
 
 export function ProgressBar({ value, className = '' }: { value: number; className?: string }) {

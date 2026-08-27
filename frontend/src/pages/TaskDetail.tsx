@@ -4,6 +4,7 @@ import { http } from '../api/client'
 import type { ProgressUpdate, ScheduleChange, Task } from '../api/types'
 import { IconArrowLeft, IconClock, IconFlag, IconHistory, IconLink, IconUser } from '../components/icons'
 import { Badge, ProgressBar, StatusBadge } from '../components/ui'
+import { SkeletonCard, SkeletonRow, SkeletonText } from '../components/Skeleton'
 
 export function TaskDetail() {
   const { id } = useParams()
@@ -88,7 +89,25 @@ export function TaskDetail() {
   }
 
   if (!task) {
-    return <div className="text-slate-400 py-10">불러오는 중...</div>
+    return (
+      <div className="max-w-6xl mx-auto space-y-5">
+        <div className="space-y-2">
+          <SkeletonText w="w-24" />
+          <SkeletonText w="w-80" className="h-7" />
+        </div>
+        <div className="grid lg:grid-cols-2 gap-4">
+          <div className="card p-6 space-y-3">
+            <SkeletonText w="w-28" />
+            {Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} />)}
+          </div>
+          <div className="card p-6 space-y-3">
+            <SkeletonText w="w-28" />
+            {Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} />)}
+          </div>
+        </div>
+        <SkeletonCard className="h-40" />
+      </div>
+    )
   }
 
   const delay = task.delay_days && task.delay_days > 0

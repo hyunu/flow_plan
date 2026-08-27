@@ -1,3 +1,5 @@
+import threading
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -11,10 +13,34 @@ from app.models.entities import (
     Task,
     User,
 )
-from app.services.ai_service import analyze_project_risk, build_project_facts
+from app.services.ai_service import build_project_facts
 from app.services.schedule_service import compute_project_schedule
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+_generating: set[int] = set()
+
+
+def _generate_risk_async(project_id: int) -> None:
+    """대시보드 응답을 막지 않도록 백그라운드에서 AI 위험 분석을 생성한다.
+    동일 프로젝트의 중복 생성은 방지한다."""
+    from app.core.database import SessionLocal
+    from app.models.entities import Project
+    from app.services.ai_service import analyze_project_risk
+
+    if project_id in _generating:
+        return
+    _generating.add(project_id)
+    db = SessionLocal()
+    try:
+        project = db.get(Project, project_id)
+        if project:
+            analyze_project_risk(db, project)
+    except Exception:
+        pass
+    finally:
+        db.close()
+        _generating.discard(project_id)
 
 
 @router.get("/projects/{project_id}")
@@ -53,7 +79,8 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
 
     latest_analysis = db.query(AIAnalysis).filter_by(project_id=project.id, analysis_type="risk").order_by(AIAnalysis.created_at.desc()).first()
     if not latest_analysis:
-        latest_analysis = analyze_project_risk(db, project)
+        # 응답 지연 방지: 백그라운드에서 생성 (다음 조회 시 반영)
+        threading.Thread(target=_generate_risk_async, args=(project.id,), daemon=True).start()
 
     return {
         "project_name": project.name,
