@@ -116,7 +116,7 @@ def run_schedule_engine(
     # 2) Current Schedule CPM (계획 기준)
     nodes: dict[int, TaskNode] = {}
     for t in tasks:
-        if not t.plan_start:
+        if not t.plan_start or not t.plan_end:
             continue
         duration = max(1, project_cal.count_workdays(t.plan_start, t.plan_end))
         nodes[t.id] = TaskNode(id=t.id, title=t.title, duration=duration, plan_start=t.plan_start)

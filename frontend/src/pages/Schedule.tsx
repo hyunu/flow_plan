@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { http } from '../api/client'
-import type { Dependency, Project, Task } from '../api/types'
+import type { Dependency, Group, Project, Task } from '../api/types'
 import { Gantt } from '../components/Gantt'
 import { TaskTable } from '../components/TaskTable'
-import { IconArrowLeft, IconLayout, IconList, IconUser } from '../components/icons'
+import { TaskFormModal } from '../components/TaskFormModal'
+import { DependencyModal } from '../components/DependencyModal'
+import { IconArrowLeft, IconLayout, IconList, IconLink, IconPlus, IconUser } from '../components/icons'
 import { Skeleton, SkeletonText } from '../components/Skeleton'
 
 export function Schedule() {
@@ -17,6 +19,9 @@ export function Schedule() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [deps, setDeps] = useState<Dependency[]>([])
   const [users, setUsers] = useState<{ user_id: number; user_name?: string }[]>([])
+  const [groups, setGroups] = useState<Group[]>([])
+  const [showAdd, setShowAdd] = useState(false)
+  const [showDeps, setShowDeps] = useState(false)
   const [view, setView] = useState<'gantt' | 'table'>(
     searchParams.get('view') === 'table' ? 'table' : 'gantt',
   )
@@ -38,12 +43,14 @@ export function Schedule() {
       http.get<Task[]>(`/tasks?project_id=${projectId}&include_children=true`),
       http.get<Dependency[]>(`/dependencies/project/${projectId}`),
       http.get<{ user_id: number; user_name?: string }[]>(`/projects/${projectId}/members`),
+      http.get<Group[]>(`/groups/project/${projectId}`),
     ])
-      .then(([p, t, dep, members]) => {
+      .then(([p, t, dep, members, grps]) => {
         setProject(p)
         setTasks(t)
         setDeps(dep)
         setUsers(members)
+        setGroups(grps)
         setError(null)
       })
       .catch((e) => setError(e.message))
@@ -120,6 +127,16 @@ export function Schedule() {
               </button>
             </span>
           )}
+          <button onClick={() => setShowAdd(true)} className="btn-primary">
+            <IconPlus size={15} />
+            태스크 추가
+          </button>
+          {view === 'gantt' && (
+            <button onClick={() => setShowDeps(true)} className="btn-secondary">
+              <IconLink size={15} />
+              의존성 관리
+            </button>
+          )}
           <div className="flex p-1 rounded-xl bg-surface-100 ring-1 ring-slate-200">
             <button
               onClick={() => switchView('gantt')}
@@ -152,6 +169,23 @@ export function Schedule() {
       ) : (
         <TaskTable tasks={tasks} userId={userFilter ?? undefined} onSelect={(tid) => navigate(`/tasks/${tid}`)} />
       )}
+
+      <TaskFormModal
+        open={showAdd}
+        projectId={projectId}
+        groups={groups}
+        members={users}
+        tasks={tasks}
+        onClose={() => setShowAdd(false)}
+        onSaved={load}
+      />
+      <DependencyModal
+        open={showDeps}
+        tasks={tasks}
+        dependencies={deps}
+        onClose={() => setShowDeps(false)}
+        onSaved={load}
+      />
     </div>
   )
 }

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { http } from '../api/client'
-import type { ProgressUpdate, ScheduleChange, Task } from '../api/types'
+import type { Group, ProgressUpdate, ScheduleChange, Task } from '../api/types'
+import { TaskFormModal } from '../components/TaskFormModal'
 import { IconArrowLeft, IconClock, IconFlag, IconHistory, IconLink, IconUser } from '../components/icons'
 import { Badge, ProgressBar, StatusBadge } from '../components/ui'
 import { SkeletonCard, SkeletonRow, SkeletonText } from '../components/Skeleton'
@@ -24,6 +25,12 @@ export function TaskDetail() {
   const [assignUser, setAssignUser] = useState<number>(0)
   const [assignHours, setAssignHours] = useState(0)
   const [users, setUsers] = useState<{ id: number; name: string }[]>([])
+  const [groups, setGroups] = useState<Group[]>([])
+  const [members, setMembers] = useState<{ user_id: number; user_name?: string }[]>([])
+  const [showAddChild, setShowAddChild] = useState(false)
+  const [edit, setEdit] = useState({ plan_start: '', plan_end: '', workload: 0, status: 'not_started', actual_start: '', actual_end: '', reason: '' })
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [editMsg, setEditMsg] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -31,6 +38,15 @@ export function TaskDetail() {
       setTask(t)
       setProgress(t.effective_progress)
       setAdj(t.user_adjustment)
+      setEdit({
+        plan_start: t.plan_start?.slice(0, 10) || '',
+        plan_end: t.plan_end?.slice(0, 10) || '',
+        workload: t.workload || 0,
+        status: t.status || 'not_started',
+        actual_start: t.actual_start?.slice(0, 10) || '',
+        actual_end: t.actual_end?.slice(0, 10) || '',
+        reason: '',
+      })
       setError(null)
       const [up, hist, kids] = await Promise.all([
         http.get<ProgressUpdate[]>(`/tasks/${taskId}/progress`),
@@ -47,9 +63,17 @@ export function TaskDetail() {
 
   useEffect(() => {
     load()
+    if (!task) return
     http
-      .get<{ user_id: number; user_name?: string }[]>(`/projects/${task?.project_id}/members`)
-      .then((members) => setUsers(members.map((m) => ({ id: m.user_id, name: m.user_name || `#${m.user_id}` }))))
+      .get<{ user_id: number; user_name?: string }[]>(`/projects/${task.project_id}/members`)
+      .then((members) => {
+        setMembers(members)
+        setUsers(members.map((m) => ({ id: m.user_id, name: m.user_name || `#${m.user_id}` })))
+      })
+      .catch(() => {})
+    http
+      .get<Group[]>(`/groups/project/${task.project_id}`)
+      .then(setGroups)
       .catch(() => {})
   }, [load, taskId, task?.project_id])
 
@@ -85,6 +109,31 @@ export function TaskDetail() {
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : '저장 실패')
+    }
+  }
+
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!task) return
+    setSavingEdit(true)
+    setEditMsg(null)
+    try {
+      await http.put(`/tasks/${task.id}`, {
+        plan_start: edit.plan_start || null,
+        plan_end: edit.plan_end || null,
+        workload: edit.workload,
+        status: edit.status,
+        actual_start: edit.actual_start || null,
+        actual_end: edit.actual_end || null,
+        change_reason: edit.reason || null,
+      })
+      setEdit((v) => ({ ...v, reason: '' }))
+      setEditMsg('저장되었습니다.')
+      load()
+    } catch (e) {
+      setEditMsg(e instanceof Error ? e.message : '저장 실패')
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -170,6 +219,53 @@ export function TaskDetail() {
         </div>
       </div>
 
+      {/* 일정·상태 편집 */}
+      <div className="card p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <IconClock size={15} className="text-slate-400" />
+          <h3 className="text-sm font-semibold text-ink-900">일정·상태 편집</h3>
+          <span className="text-xs text-slate-400">변경 시 변경 이력에 기록됩니다</span>
+        </div>
+        <form onSubmit={saveEdit} className="grid sm:grid-cols-6 gap-3 items-end">
+          <div>
+            <label className="label">계획 시작일</label>
+            <input type="date" className="input" value={edit.plan_start} onChange={(e) => setEdit({ ...edit, plan_start: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">계획 종료일</label>
+            <input type="date" className="input" value={edit.plan_end} onChange={(e) => setEdit({ ...edit, plan_end: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">실제 시작일</label>
+            <input type="date" className="input" value={edit.actual_start} onChange={(e) => setEdit({ ...edit, actual_start: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">실제 종료일</label>
+            <input type="date" className="input" value={edit.actual_end} onChange={(e) => setEdit({ ...edit, actual_end: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">작업량 (h)</label>
+            <input type="number" min={0} className="input" value={edit.workload || ''} onChange={(e) => setEdit({ ...edit, workload: Number(e.target.value) })} />
+          </div>
+          <div>
+            <label className="label">상태</label>
+            <select className="input" value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })}>
+              {['not_started', 'in_progress', 'delayed', 'blocked', 'completed'].map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <div className="sm:col-span-5">
+            <label className="label">변경 사유</label>
+            <input className="input" value={edit.reason} onChange={(e) => setEdit({ ...edit, reason: e.target.value })} placeholder="예: 요구사항 변경으로 일정 연장" />
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="submit" className="btn-primary" disabled={savingEdit}>{savingEdit ? '저장 중...' : '저장'}</button>
+            {editMsg && <span className={`text-xs ${editMsg === '저장되었습니다.' ? 'text-emerald-600' : 'text-red-600'}`}>{editMsg}</span>}
+          </div>
+        </form>
+      </div>
+
       {/* 진척률 */}
       <div className="card p-6">
         <div className="flex items-center gap-2 mb-4">
@@ -236,9 +332,14 @@ export function TaskDetail() {
         </div>
 
         <div className="card p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <IconLink size={15} className="text-slate-400" />
-            <h3 className="text-sm font-semibold text-ink-900">하위 Task</h3>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <IconLink size={15} className="text-slate-400" />
+              <h3 className="text-sm font-semibold text-ink-900">하위 Task</h3>
+            </div>
+            <button onClick={() => setShowAddChild(true)} className="btn-secondary !py-1.5 !px-3 text-xs">
+              + 하위 Task 추가
+            </button>
           </div>
           {(task.children || children).length === 0 ? (
             <div className="text-sm text-slate-400 py-2">하위 Task 없음</div>
@@ -406,6 +507,16 @@ export function TaskDetail() {
           )}
         </div>
       )}
+
+      <TaskFormModal
+        open={showAddChild}
+        projectId={task.project_id}
+        groups={groups}
+        members={members}
+        defaultParentId={task.id}
+        onClose={() => setShowAddChild(false)}
+        onSaved={load}
+      />
     </div>
   )
 }
