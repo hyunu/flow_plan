@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.core.config import settings
@@ -20,6 +20,17 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expi
 
 class Base(DeclarativeBase):
     pass
+
+
+def ensure_schema():
+    """기존 DB(모델 변경분)에 누락 컬럼을 안전하게 추가한다. 신규 DB는 create_all이 처리."""
+    insp = inspect(engine)
+    if "roles" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("roles")}
+    if "permissions" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE roles ADD COLUMN permissions TEXT"))
 
 
 def get_db():

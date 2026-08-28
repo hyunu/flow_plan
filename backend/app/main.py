@@ -4,10 +4,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import api_router
 from app.core.audit_context import get_pending_ids, get_request_meta, reset
 from app.core.config import settings
-from app.core.database import Base, SessionLocal, engine
+from app.core.database import Base, SessionLocal, engine, ensure_schema
 from app import models  # noqa: F401  (모델 등록)
 
 Base.metadata.create_all(bind=engine)
+ensure_schema()
 
 # 첫 실행 시 DB가 비어 있으면 시드 데이터 자동 생성 (멱등)
 if settings.seed_on_startup:

@@ -91,6 +91,7 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
         "forecast_finish": result.project_forecast_finish,
         "expected_delay_days": result.expected_delay_days,
         "risk_level": "WARNING" if result.expected_delay_days > 0 else "NORMAL",
+        "plan_curve": [{"date": d.isoformat(), "pct": pct} for d, pct in result.plan_curve],
         "milestones": [
             {"id": m.id, "name": m.name, "progress": m.progress, "status": m.status,
              "start_date": m.start_date, "end_date": m.end_date}

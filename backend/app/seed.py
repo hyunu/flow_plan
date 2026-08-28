@@ -8,11 +8,13 @@ Project C: 차세대 ERP 구축    (~90 tasks)
 """
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.core.database import Base, SessionLocal, engine
+from app.core.database import Base, SessionLocal, engine, ensure_schema
+from app.core.permissions import DEFAULT_PERMISSIONS, perms_serialize
 from app.core.security import hash_password
 from app.models.entities import (
     Challenge,
@@ -299,17 +301,39 @@ def backfill_feedback(db: Session, project: Project, users: dict, today: date):
 
 
 def seed(db: Session) -> None:
+    ensure_schema()
     Base.metadata.create_all(bind=engine)
-    if db.query(Role).count() > 0:
-        print("이미 데이터가 존재합니다. 초기화하려면 backend/data/flow_plan.db 를 삭제 후 재실행하세요.")
-        return
+    # 기존에 시드된 데이터가 있는지 (첫 실행인지 여부)
+    existing = db.query(User).count() > 0
 
-    roles = {}
+    roles: dict[str, Role] = {}
     for name, desc in ROLES:
-        r = Role(name=name, description=desc)
-        db.add(r)
+        r = db.query(Role).filter_by(name=name).first()
+        if r is None:
+            r = Role(name=name, description=desc)
+            db.add(r)
         roles[name] = r
     db.flush()
+
+    # 역할별 기본 권한 반영 (신규 역할 생성 또는 권한이 비어 있는 경우)
+    def _perms_raw(r: Role) -> bool:
+        try:
+            return bool(json.loads(r.permissions or "[]"))
+        except (ValueError, TypeError):
+            return False
+
+    perms_changed = False
+    for name, perms in DEFAULT_PERMISSIONS.items():
+        r = roles.get(name)
+        if r and not _perms_raw(r):
+            r.permissions = perms_serialize(perms)
+            perms_changed = True
+    if perms_changed:
+        db.commit()
+
+    if existing:
+        print("이미 데이터가 존재합니다. (역할별 기본 권한만 반영됨) 초기화하려면 backend/data/flow_plan.db 를 삭제 후 재실행하세요.")
+        return
 
     users: dict[str, User] = {}
     role_map = {"admin": "System Administrator", "pm": "Project Manager", "member": "Project Member"}

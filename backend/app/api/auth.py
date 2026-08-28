@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.permissions import audit
+from app.core.permissions import audit, role_permissions
 from app.core.ratelimit import rate_limit
 from app.core.security import (
     create_access_token,
@@ -80,9 +80,10 @@ def refresh(body: RefreshRequest, request: Request = None, db: Session = Depends
 
 
 @router.get("/me", response_model=UserRead)
-def me(user: User = Depends(get_current_user)):
+def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     data = UserRead.model_validate(user)
     data.role_name = user.role.name if user.role else None
+    data.permissions = sorted(role_permissions(user.role))
     return data
 
 

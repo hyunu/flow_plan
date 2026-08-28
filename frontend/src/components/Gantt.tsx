@@ -136,7 +136,9 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
     return { monthBands, weekendCols, weekTicks }
   }, [start, dayCount])
 
-  // 의존성 화살표
+  // 의존성 화살표 (양쪽 모두 크리티컬이면 critical 체인 엣지)
+  const cpSet = useMemo(() => new Set(tasks.filter((t) => t.is_critical).map((t) => t.id)), [tasks])
+
   const edges = dependencies
     .map((d) => {
       const p = taskY.get(d.predecessor_id)
@@ -149,9 +151,20 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
       if (!pe || !ss) return null
       const y1 = AXIS_H + p * ROW_H + ROW_H / 2
       const y2 = AXIS_H + s * ROW_H + ROW_H / 2
-      return { x1: pe.x + pe.w, y1, x2: ss.x, y2 }
+      return {
+        x1: pe.x + pe.w,
+        y1,
+        x2: ss.x,
+        y2,
+        critical: cpSet.has(d.predecessor_id) && cpSet.has(d.successor_id),
+      }
     })
-    .filter((e): e is { x1: number; y1: number; x2: number; y2: number } => e != null)
+    .filter((e): e is { x1: number; y1: number; x2: number; y2: number; critical: boolean } => e != null)
+
+  const edgeCurve = (e: { x1: number; y1: number; x2: number; y2: number }) =>
+    `M ${e.x1} ${e.y1} C ${(e.x1 + e.x2) / 2} ${e.y1}, ${(e.x1 + e.x2) / 2} ${e.y2}, ${e.x2 - 6} ${e.y2}`
+  const arrowHead = (e: { x1: number; y1: number; x2: number; y2: number }, s: number) =>
+    `${e.x2},${e.y2 - s} ${e.x2 + s + 1},${e.y2} ${e.x2},${e.y2 + s}`
 
   const yOf = (idx: number) => AXIS_H + idx * ROW_H
 
@@ -282,18 +295,27 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
               </g>
             )}
 
-            {/* 의존성 */}
-            {edges.map((e, i) => (
-              <g key={i} opacity={0.45}>
-                <path
-                  d={`M ${e.x1} ${e.y1} C ${(e.x1 + e.x2) / 2} ${e.y1}, ${(e.x1 + e.x2) / 2} ${e.y2}, ${e.x2 - 6} ${e.y2}`}
-                  stroke="#94a3b8"
-                  strokeWidth={1.2}
-                  fill="none"
-                />
-                <polygon points={`${e.x2},${e.y2 - 3.5} ${e.x2 + 4.5},${e.y2} ${e.x2},${e.y2 + 3.5}`} fill="#94a3b8" />
-              </g>
-            ))}
+            {/* 일반 의존성 */}
+            {edges
+              .filter((e) => !e.critical)
+              .map((e, i) => (
+                <g key={`e${i}`} opacity={0.3}>
+                  <path d={edgeCurve(e)} stroke="#94a3b8" strokeWidth={1.1} fill="none" />
+                  <polygon points={arrowHead(e, 3.5)} fill="#94a3b8" />
+                </g>
+              ))}
+
+            {/* 크리티컬 경로 연결선 (가장 위에) */}
+            {edges
+              .filter((e) => e.critical)
+              .map((e, i) => (
+                <g key={`c${i}`}>
+                  <path d={edgeCurve(e)} stroke="#ef4444" strokeWidth={5} fill="none" opacity={0.16} />
+                  <path d={edgeCurve(e)} stroke="#ef4444" strokeWidth={2.3} fill="none" />
+                  <circle cx={e.x1} cy={e.y1} r={4} fill="#ef4444" stroke="#fff" strokeWidth={1.4} />
+                  <polygon points={arrowHead(e, 4.5)} fill="#ef4444" />
+                </g>
+              ))}
 
             {/* 그룹 라벨 */}
             {renderRows.map((r, idx) =>

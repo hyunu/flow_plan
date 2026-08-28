@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.permissions import audit, get_project_or_403
+from app.core.permissions import audit, get_project_or_403, require_perm
 from app.core.security import get_current_user
 from app.models.entities import Task, TaskDependency, User
 from app.schemas import DependencyCreate, DependencyRead
@@ -28,7 +28,8 @@ def create_dependency(body: DependencyCreate, db: Session = Depends(get_db), use
         raise HTTPException(status_code=404, detail="Task를 찾을 수 없습니다.")
     if pred.project_id != succ.project_id:
         raise HTTPException(status_code=400, detail="같은 프로젝트의 Task만 연결할 수 있습니다.")
-    project = get_project_or_403(db, pred.project_id, user, require_manage=True)
+    project = get_project_or_403(db, pred.project_id, user)
+    require_perm(db, user, "dependency.manage", project)
     if pred.id == succ.id:
         raise HTTPException(status_code=400, detail="자기 자신에 의존할 수 없습니다.")
     existing = db.query(TaskDependency).filter_by(predecessor_id=pred.id, successor_id=succ.id).first()
@@ -60,7 +61,8 @@ def delete_dependency(dep_id: int, db: Session = Depends(get_db), user: User = D
     pred = db.get(Task, dep.predecessor_id)
     if pred is None:
         raise HTTPException(status_code=404, detail="선행 Task를 찾을 수 없습니다.")
-    project = get_project_or_403(db, pred.project_id, user, require_manage=True)
+    project = get_project_or_403(db, pred.project_id, user)
+    require_perm(db, user, "dependency.manage", project)
     audit(db, user.id, "delete", "TaskDependency", dep.id)
     db.delete(dep)
     db.commit()

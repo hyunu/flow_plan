@@ -45,6 +45,7 @@ class UserRead(UserBase, ORMModel):
     role_id: int
     is_active: bool
     role_name: str | None = None
+    permissions: list[str] = []
     profile: str | None = None
     created_at: datetime
 
@@ -53,6 +54,12 @@ class RoleRead(ORMModel):
     id: int
     name: str
     description: str | None = None
+    permissions: list[str] = []
+
+
+class RoleUpdate(BaseModel):
+    description: str | None = None
+    permissions: list[str] | None = None
 
 
 # ---------- Project ----------
@@ -202,6 +209,8 @@ class TaskRead(ORMModel):
     assignments: list[AssignmentRead] = []
     children: list["TaskRead"] = []
     group_name: str | None = None
+    is_critical: bool = False
+    delay_days: int | None = None
 
 
 class TaskDetail(TaskRead):

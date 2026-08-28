@@ -14,6 +14,7 @@ class Role(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255))
+    permissions: Mapped[str] = mapped_column(Text, default="[]")  # JSON 배열
 
     users: Mapped[list["User"]] = relationship(back_populates="role")
 

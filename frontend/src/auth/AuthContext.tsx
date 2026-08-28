@@ -61,3 +61,11 @@ export function useAuth(): AuthCtx {
   if (!ctx) throw new Error('useAuth must be used within AuthProvider')
   return ctx
 }
+
+export function useCan(): (perm: string) => boolean {
+  const { user } = useAuth()
+  return (perm: string) => {
+    const perms = user?.permissions
+    return Array.isArray(perms) ? perms.includes(perm) : false
+  }
+}

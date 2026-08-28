@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { http } from '../api/client'
 import type { Group, ProgressUpdate, ScheduleChange, Task } from '../api/types'
+import { useCan } from '../auth/AuthContext'
 import { TaskFormModal } from '../components/TaskFormModal'
 import { IconArrowLeft, IconClock, IconFlag, IconHistory, IconLink, IconUser } from '../components/icons'
 import { Badge, ProgressBar, StatusBadge } from '../components/ui'
@@ -11,6 +12,9 @@ export function TaskDetail() {
   const { id } = useParams()
   const taskId = Number(id)
   const navigate = useNavigate()
+  const can = useCan()
+  const canEditSchedule = can('task.edit_schedule')
+  const canUpdateProgress = can('task.update_progress')
 
   const [task, setTask] = useState<Task | null>(null)
   const [updates, setUpdates] = useState<ProgressUpdate[]>([])
@@ -220,6 +224,7 @@ export function TaskDetail() {
       </div>
 
       {/* 일정·상태 편집 */}
+      {canEditSchedule || canUpdateProgress ? (
       <div className="card p-6">
         <div className="flex items-center gap-2 mb-4">
           <IconClock size={15} className="text-slate-400" />
@@ -229,27 +234,27 @@ export function TaskDetail() {
         <form onSubmit={saveEdit} className="grid sm:grid-cols-6 gap-3 items-end">
           <div>
             <label className="label">계획 시작일</label>
-            <input type="date" className="input" value={edit.plan_start} onChange={(e) => setEdit({ ...edit, plan_start: e.target.value })} />
+            <input type="date" className="input" value={edit.plan_start} disabled={!canEditSchedule} onChange={(e) => setEdit({ ...edit, plan_start: e.target.value })} />
           </div>
           <div>
             <label className="label">계획 종료일</label>
-            <input type="date" className="input" value={edit.plan_end} onChange={(e) => setEdit({ ...edit, plan_end: e.target.value })} />
+            <input type="date" className="input" value={edit.plan_end} disabled={!canEditSchedule} onChange={(e) => setEdit({ ...edit, plan_end: e.target.value })} />
           </div>
           <div>
             <label className="label">실제 시작일</label>
-            <input type="date" className="input" value={edit.actual_start} onChange={(e) => setEdit({ ...edit, actual_start: e.target.value })} />
+            <input type="date" className="input" value={edit.actual_start} disabled={!canUpdateProgress} onChange={(e) => setEdit({ ...edit, actual_start: e.target.value })} />
           </div>
           <div>
             <label className="label">실제 종료일</label>
-            <input type="date" className="input" value={edit.actual_end} onChange={(e) => setEdit({ ...edit, actual_end: e.target.value })} />
+            <input type="date" className="input" value={edit.actual_end} disabled={!canUpdateProgress} onChange={(e) => setEdit({ ...edit, actual_end: e.target.value })} />
           </div>
           <div>
             <label className="label">작업량 (h)</label>
-            <input type="number" min={0} className="input" value={edit.workload || ''} onChange={(e) => setEdit({ ...edit, workload: Number(e.target.value) })} />
+            <input type="number" min={0} className="input" value={edit.workload || ''} disabled={!canUpdateProgress} onChange={(e) => setEdit({ ...edit, workload: Number(e.target.value) })} />
           </div>
           <div>
             <label className="label">상태</label>
-            <select className="input" value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })}>
+            <select className="input" value={edit.status} disabled={!canUpdateProgress} onChange={(e) => setEdit({ ...edit, status: e.target.value })}>
               {['not_started', 'in_progress', 'delayed', 'blocked', 'completed'].map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
@@ -265,6 +270,7 @@ export function TaskDetail() {
           </div>
         </form>
       </div>
+      ) : null}
 
       {/* 진척률 */}
       <div className="card p-6">
@@ -291,9 +297,11 @@ export function TaskDetail() {
             <label className="label">User Adjustment</label>
             <input type="number" className="input" value={adj} onChange={(e) => setAdj(Number(e.target.value))} />
           </div>
+          {canUpdateProgress && (
           <button className="btn-primary" onClick={saveProgress}>
             저장
           </button>
+          )}
         </div>
       </div>
 
@@ -319,6 +327,7 @@ export function TaskDetail() {
               ))}
             </div>
           )}
+          {can('task.assign') ? (
           <form onSubmit={addAssignment} className="mt-4 flex gap-2">
             <select className="input flex-1" value={assignUser} onChange={(e) => setAssignUser(Number(e.target.value))}>
               <option value={0}>사용자 선택</option>
@@ -329,6 +338,7 @@ export function TaskDetail() {
             <input type="number" className="input w-24" placeholder="h" value={assignHours || ''} onChange={(e) => setAssignHours(Number(e.target.value))} />
             <button className="btn-secondary">추가</button>
           </form>
+          ) : null}
         </div>
 
         <div className="card p-6">
@@ -337,9 +347,11 @@ export function TaskDetail() {
               <IconLink size={15} className="text-slate-400" />
               <h3 className="text-sm font-semibold text-ink-900">하위 Task</h3>
             </div>
+            {can('task.create') && (
             <button onClick={() => setShowAddChild(true)} className="btn-secondary !py-1.5 !px-3 text-xs">
               + 하위 Task 추가
             </button>
+            )}
           </div>
           {(task.children || children).length === 0 ? (
             <div className="text-sm text-slate-400 py-2">하위 Task 없음</div>
@@ -388,6 +400,7 @@ export function TaskDetail() {
         <div className="grid lg:grid-cols-2 gap-4">
           <div className="card p-6">
             <h3 className="text-sm font-semibold text-ink-900 mb-4">진행 기록 입력</h3>
+            {canUpdateProgress ? (
             <form onSubmit={addProgress} className="space-y-3">
               <div>
                 <label className="label">수행 내용</label>
@@ -432,6 +445,7 @@ export function TaskDetail() {
               </div>
               <button className="btn-primary w-full justify-center">저장</button>
             </form>
+            ) : null}
           </div>
 
           <div className="space-y-3">

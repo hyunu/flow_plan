@@ -5,8 +5,28 @@ export interface User {
   name: string
   role_id: number
   role_name?: string
+  permissions?: string[]
   is_active: boolean
   profile?: string
+}
+
+export interface Role {
+  id: number
+  name: string
+  description?: string
+  permissions?: string[]
+}
+
+export interface PermissionDef {
+  key: string
+  label: string
+  desc: string
+}
+
+export interface PermissionGroup {
+  key: string
+  label: string
+  perms: PermissionDef[]
 }
 
 export interface Project {
@@ -131,6 +151,7 @@ export interface DashboardData {
   forecast_finish?: string
   expected_delay_days: number
   risk_level: string
+  plan_curve?: { date: string; pct: number }[]
   milestones: Milestone[]
   critical_path: { task_id: number; title: string; delay_days: number; total_float: number }[]
   delayed_tasks: { task_id: number; title: string; delay_days: number; forecast_finish?: string }[]

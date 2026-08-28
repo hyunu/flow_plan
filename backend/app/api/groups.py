@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.permissions import audit, get_project_or_403
+from app.core.permissions import audit, get_project_or_403, require_perm
 from app.core.security import get_current_user
 from app.models.entities import Group, User
 from app.schemas import GroupCreate, GroupRead, GroupUpdate
@@ -18,7 +18,8 @@ def list_groups(project_id: int, db: Session = Depends(get_db), user: User = Dep
 
 @router.post("", response_model=GroupRead)
 def create_group(body: GroupCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    project = get_project_or_403(db, body.project_id, user, require_manage=True)
+    project = get_project_or_403(db, body.project_id, user)
+    require_perm(db, user, "group.manage", project)
     group = Group(project_id=project.id, name=body.name, description=body.description, sort_order=body.sort_order)
     db.add(group)
     audit(db, user.id, "create", "Group", group.id, reason="Group 생성")
@@ -32,7 +33,8 @@ def update_group(group_id: int, body: GroupUpdate, db: Session = Depends(get_db)
     group = db.get(Group, group_id)
     if not group:
         raise HTTPException(status_code=404, detail="Group을 찾을 수 없습니다.")
-    get_project_or_403(db, group.project_id, user, require_manage=True)
+    project = get_project_or_403(db, group.project_id, user)
+    require_perm(db, user, "group.manage", project)
     if body.name is not None:
         group.name = body.name
     if body.description is not None:
@@ -50,7 +52,8 @@ def delete_group(group_id: int, db: Session = Depends(get_db), user: User = Depe
     group = db.get(Group, group_id)
     if not group:
         raise HTTPException(status_code=404, detail="Group을 찾을 수 없습니다.")
-    get_project_or_403(db, group.project_id, user, require_manage=True)
+    project = get_project_or_403(db, group.project_id, user)
+    require_perm(db, user, "group.manage", project)
     audit(db, user.id, "delete", "Group", group.id)
     db.delete(group)
     db.commit()

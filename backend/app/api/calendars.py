@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.permissions import audit, get_project_or_403
+from app.core.permissions import audit, get_project_or_403, require_perm
 from app.core.security import get_current_user
 from app.models.entities import (
     Project,
@@ -61,7 +61,8 @@ def upsert_project_entry(
     project_id: int, body: ProjectCalendarEntryCreate,
     db: Session = Depends(get_db), user: User = Depends(get_current_user),
 ):
-    project = get_project_or_403(db, project_id, user, require_manage=True)
+    project = get_project_or_403(db, project_id, user)
+    require_perm(db, user, "calendar.project_manage", project)
     cal = project.calendar
     if not cal:
         cal = ProjectCalendar(project_id=project.id, daily_work_hours=8.0, work_days="0,1,2,3,4")

@@ -173,6 +173,13 @@ export const IconMail = (p: IconProps) => (
   </Svg>
 )
 
+export const IconShield = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 2l7 3v6c0 5-3.5 8-7 10-3.5-2-7-5-7-10V5l7-3Z" />
+    <path d="m9 12 2 2 4-4" />
+  </Svg>
+)
+
 export const IconSettings = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="12" cy="12" r="3" />

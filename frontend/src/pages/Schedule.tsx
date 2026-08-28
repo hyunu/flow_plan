@@ -2,14 +2,17 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { http } from '../api/client'
 import type { Dependency, Group, Project, Task } from '../api/types'
+import { useAuth, useCan } from '../auth/AuthContext'
 import { Gantt } from '../components/Gantt'
 import { TaskTable } from '../components/TaskTable'
 import { TaskFormModal } from '../components/TaskFormModal'
 import { DependencyModal } from '../components/DependencyModal'
-import { IconArrowLeft, IconLayout, IconList, IconLink, IconPlus, IconUser } from '../components/icons'
+import { IconArrowLeft, IconFlag, IconLayout, IconList, IconLink, IconPlus, IconUser } from '../components/icons'
 import { Skeleton, SkeletonText } from '../components/Skeleton'
 
 export function Schedule() {
+  useAuth()
+  const can = useCan()
   const { id } = useParams()
   const projectId = Number(id)
   const navigate = useNavigate()
@@ -26,6 +29,8 @@ export function Schedule() {
     searchParams.get('view') === 'table' ? 'table' : 'gantt',
   )
   const userFilter = searchParams.get('user') ? Number(searchParams.get('user')) : null
+  const f = searchParams.get('filter')
+  const listFilter: 'delayed' | 'unresolved' | undefined = f === 'delayed' || f === 'unresolved' ? f : undefined
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -35,6 +40,20 @@ export function Schedule() {
     next.set('view', v)
     setSearchParams(next, { replace: true })
   }
+
+  const clearFilter = () => {
+    const next = new URLSearchParams(searchParams)
+    next.delete('filter')
+    next.set('view', 'gantt')
+    setSearchParams(next, { replace: true })
+  }
+
+  const filterInfo: { key: string; label: string } | null =
+    listFilter === 'delayed'
+      ? { key: 'filter', label: '지연 Task' }
+      : listFilter === 'unresolved'
+        ? { key: 'filter', label: '미해결 Issue' }
+        : null
 
   const load = () => {
     setLoading(true)
@@ -118,6 +137,15 @@ export function Schedule() {
 
         {/* 보기 전환 */}
         <div className="flex items-center gap-3">
+          {filterInfo && (
+            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 ring-1 ring-amber-200 text-[13px]">
+              <IconFlag size={14} />
+              {filterInfo.label}만 표시
+              <button onClick={clearFilter} className="text-amber-600 hover:text-amber-900 font-bold" title="필터 해제">
+                ×
+              </button>
+            </span>
+          )}
           {filteredUser && (
             <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-brand-50 text-brand-700 ring-1 ring-brand-200 text-[13px]">
               <IconUser size={14} />
@@ -127,11 +155,13 @@ export function Schedule() {
               </button>
             </span>
           )}
-          <button onClick={() => setShowAdd(true)} className="btn-primary">
-            <IconPlus size={15} />
-            태스크 추가
-          </button>
-          {view === 'gantt' && (
+          {can('task.create') && (
+            <button onClick={() => setShowAdd(true)} className="btn-primary">
+              <IconPlus size={15} />
+              태스크 추가
+            </button>
+          )}
+          {view === 'gantt' && can('dependency.manage') && (
             <button onClick={() => setShowDeps(true)} className="btn-secondary">
               <IconLink size={15} />
               의존성 관리
@@ -167,7 +197,12 @@ export function Schedule() {
       {view === 'gantt' ? (
         <Gantt tasks={tasks} dependencies={deps} onSelect={(tid) => navigate(`/tasks/${tid}`)} />
       ) : (
-        <TaskTable tasks={tasks} userId={userFilter ?? undefined} onSelect={(tid) => navigate(`/tasks/${tid}`)} />
+        <TaskTable
+          tasks={tasks}
+          userId={userFilter ?? undefined}
+          filter={listFilter}
+          onSelect={(tid) => navigate(`/tasks/${tid}`)}
+        />
       )}
 
       <TaskFormModal

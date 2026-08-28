@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.permissions import audit, get_project_or_403
+from app.core.permissions import audit, get_project_or_403, require_perm
 from app.core.security import get_current_user
 from app.models.entities import Milestone, User
 from app.schemas import MilestoneCreate, MilestoneRead, MilestoneUpdate
@@ -18,7 +18,8 @@ def list_milestones(project_id: int, db: Session = Depends(get_db), user: User =
 
 @router.post("", response_model=MilestoneRead)
 def create_milestone(body: MilestoneCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    project = get_project_or_403(db, body.project_id, user, require_manage=True)
+    project = get_project_or_403(db, body.project_id, user)
+    require_perm(db, user, "milestone.manage", project)
     ms = Milestone(
         project_id=project.id, name=body.name, description=body.description, sort_order=body.sort_order,
         start_date=body.start_date, end_date=body.end_date, owner_id=body.owner_id,
@@ -35,7 +36,8 @@ def update_milestone(milestone_id: int, body: MilestoneUpdate, db: Session = Dep
     ms = db.get(Milestone, milestone_id)
     if not ms:
         raise HTTPException(status_code=404, detail="Milestone을 찾을 수 없습니다.")
-    get_project_or_403(db, ms.project_id, user, require_manage=True)
+    project = get_project_or_403(db, ms.project_id, user)
+    require_perm(db, user, "milestone.manage", project)
     for field_name in ["name", "description", "sort_order", "start_date", "end_date", "progress", "status", "owner_id"]:
         val = getattr(body, field_name)
         if val is not None:
@@ -51,7 +53,8 @@ def delete_milestone(milestone_id: int, db: Session = Depends(get_db), user: Use
     ms = db.get(Milestone, milestone_id)
     if not ms:
         raise HTTPException(status_code=404, detail="Milestone을 찾을 수 없습니다.")
-    get_project_or_403(db, ms.project_id, user, require_manage=True)
+    project = get_project_or_403(db, ms.project_id, user)
+    require_perm(db, user, "milestone.manage", project)
     audit(db, user.id, "delete", "Milestone", ms.id)
     db.delete(ms)
     db.commit()

@@ -206,7 +206,7 @@ export function Dashboard() {
           sub="자동 감지"
           icon={<IconFlag size={15} />}
           tone={data.delayed_tasks.length > 0 ? 'danger' : 'ok'}
-          to={`/projects/${projectId}/schedule?view=table`}
+          to={`/projects/${projectId}/schedule?view=table&filter=delayed`}
         />
         <StatCard
           label="미해결 Issue"
@@ -214,7 +214,7 @@ export function Dashboard() {
           sub="해결 예정일 추적"
           icon={<IconAlert size={15} />}
           tone={data.issues.length > 0 ? 'warn' : 'ok'}
-          to={`/projects/${projectId}/schedule?view=table`}
+          to={`/projects/${projectId}/schedule?view=table&filter=unresolved`}
         />
       </div>
 
@@ -244,6 +244,7 @@ export function Dashboard() {
       <div className="grid lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
           <ProgressChart
+            tasks={tasks}
             plannedFinish={data.planned_finish}
             forecastFinish={data.forecast_finish}
             planProgress={data.plan_progress}
@@ -252,6 +253,9 @@ export function Dashboard() {
             baselineEnd={b.end}
             planStart={p.start}
             planEnd={p.end}
+            expectedDelayDays={data.expected_delay_days}
+            milestones={data.milestones}
+            planCurve={data.plan_curve}
             onRefresh={load}
           />
         </div>
@@ -293,7 +297,7 @@ export function Dashboard() {
             icon={<IconFlag size={15} />}
             action={
               data.delayed_tasks.length > 0 ? (
-                <Link to={`/projects/${projectId}/schedule`} className="text-xs text-brand-600 hover:underline">
+                <Link to={`/projects/${projectId}/schedule?view=table&filter=delayed`} className="text-xs text-brand-600 hover:underline">
                   전체 보기
                 </Link>
               ) : undefined
@@ -342,8 +346,8 @@ export function Dashboard() {
             title="Issue"
             icon={<IconAlert size={15} />}
             action={
-              data.issues.length > 0 ? (
-                <Link to={`/projects/${projectId}/schedule?view=table`} className="text-xs text-brand-600 hover:underline">
+data.issues.length > 0 ? (
+                <Link to={`/projects/${projectId}/schedule?view=table&filter=unresolved`} className="text-xs text-brand-600 hover:underline">
                   전체 보기
                 </Link>
               ) : undefined

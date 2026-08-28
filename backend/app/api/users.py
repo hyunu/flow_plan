@@ -2,10 +2,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
-from app.core.permissions import audit
+from app.core.permissions import (
+    ALL_PERMISSIONS,
+    GROUP_LABELS,
+    PERMISSIONS,
+    audit,
+    perms_serialize,
+    role_permissions,
+)
 from app.core.security import SYSTEM_ADMIN, hash_password, require_role
 from app.models.entities import Role, User, UserCalendar
-from app.schemas import UserCreate, UserRead, UserUpdate
+from app.schemas import RoleRead, RoleUpdate, UserCreate, UserRead, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -13,6 +20,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 def _to_read(user: User) -> UserRead:
     data = UserRead.model_validate(user)
     data.role_name = user.role.name if user.role else None
+    data.permissions = sorted(role_permissions(user.role))
     return data
 
 
@@ -40,6 +48,49 @@ def create_user(body: UserCreate, db: Session = Depends(get_db), admin: User = D
     db.commit()
     db.refresh(user)
     return _to_read(user)
+
+
+@router.get("/permissions/definitions")
+def list_permission_definitions(_: User = Depends(require_role(SYSTEM_ADMIN))):
+    groups: list[dict] = []
+    for gkey, glabel in GROUP_LABELS.items():
+        items = [
+            {"key": k, "label": v["label"], "desc": v["desc"]}
+            for k, v in PERMISSIONS.items()
+            if v.get("group") == gkey
+        ]
+        if items:
+            groups.append({"key": gkey, "label": glabel, "perms": items})
+    return {"groups": groups}
+
+
+@router.get("/roles", response_model=list[RoleRead])
+def list_roles(db: Session = Depends(get_db), _: User = Depends(require_role(SYSTEM_ADMIN))):
+    roles = db.query(Role).order_by(Role.id).all()
+    return [RoleRead(id=r.id, name=r.name, description=r.description, permissions=sorted(role_permissions(r))) for r in roles]
+
+
+@router.put("/roles/{role_id}", response_model=RoleRead)
+def update_role(
+    role_id: int,
+    body: RoleUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_role(SYSTEM_ADMIN)),
+):
+    role = db.get(Role, role_id)
+    if not role:
+        raise HTTPException(status_code=404, detail="역할을 찾을 수 없습니다.")
+    if body.description is not None:
+        role.description = body.description
+    if body.permissions is not None:
+        invalid = set(body.permissions) - ALL_PERMISSIONS
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"알 수 없는 권한: {sorted(invalid)}")
+        role.permissions = perms_serialize(set(body.permissions))
+    audit(db, admin.id, "update", "Role", role.id, before=role.name, after=perms_serialize(role_permissions(role)), reason="역할 권한 수정")
+    db.commit()
+    db.refresh(role)
+    return RoleRead(id=role.id, name=role.name, description=role.description, permissions=sorted(role_permissions(role)))
 
 
 @router.get("/{user_id}", response_model=UserRead)
@@ -77,8 +128,3 @@ def update_user(
     db.commit()
     db.refresh(user)
     return _to_read(user)
-
-
-@router.get("/roles", response_model=list)
-def list_roles(db: Session = Depends(get_db), _: User = Depends(require_role(SYSTEM_ADMIN))):
-    return [{"id": r.id, "name": r.name, "description": r.description} for r in db.query(Role).all()]

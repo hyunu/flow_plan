@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
-from app.core.permissions import audit, get_project_or_403
+from app.core.permissions import audit, get_project_or_403, has_perm, require_perm
 from app.core.security import get_current_user
 from app.models.entities import (
     Group,
@@ -27,7 +27,7 @@ from app.services.schedule_service import apply_engine_progress, compute_project
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
-def _to_read(t: Task, db: Session) -> TaskRead:
+def _to_read(t: Task, db: Session, crit_ids: set[int] | None = None, delays: dict[int, int] | None = None) -> TaskRead:
     read = TaskRead.model_validate(t)
     read.assignments = [
         AssignmentRead(id=a.id, task_id=a.task_id, user_id=a.user_id, workload_hours=a.workload_hours,
@@ -35,16 +35,22 @@ def _to_read(t: Task, db: Session) -> TaskRead:
         for a in t.assignments
     ]
     read.group_name = t.group.name if t.group else None
+    if crit_ids is not None:
+        read.is_critical = t.id in crit_ids
+    if delays is not None:
+        read.delay_days = delays.get(t.id)
     return read
 
 
-def _load_task(db: Session, task_id: int, user: User, require_manage: bool = False) -> Task:
+def _load_task(db: Session, task_id: int, user: User, perm: str | None = None) -> Task:
     task = db.query(Task).options(
         joinedload(Task.project), joinedload(Task.assignments), joinedload(Task.group),
     ).filter(Task.id == task_id, Task.is_deleted.is_(False)).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task를 찾을 수 없습니다.")
-    get_project_or_403(db, task.project_id, user, require_manage=require_manage)
+    get_project_or_403(db, task.project_id, user)
+    if perm:
+        require_perm(db, user, perm, task.project)
     return task
 
 
@@ -88,12 +94,26 @@ def list_tasks(
     elif project_id is not None and not include_children:
         q = q.filter(Task.parent_id.is_(None))
     tasks = q.order_by(Task.id).all()
-    return [_to_read(t, db) for t in tasks]
+    crit_ids: set[int] | None = None
+    delays: dict[int, int] | None = None
+    if project_id is not None:
+        from app.models.entities import Project
+
+        project = db.get(Project, project_id)
+        try:
+            result = compute_project_schedule(db, project)
+            crit_ids = {tr.task_id for tr in result.tasks if tr.is_critical}
+            delays = {tr.task_id: tr.delay_days for tr in result.tasks}
+        except Exception:
+            crit_ids = set()
+            delays = {}
+    return [_to_read(t, db, crit_ids, delays) for t in tasks]
 
 
 @router.post("", response_model=TaskRead)
 def create_task(body: TaskCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    project = get_project_or_403(db, body.project_id, user, require_manage=True)
+    project = get_project_or_403(db, body.project_id, user)
+    require_perm(db, user, "task.create", project)
     if body.parent_id:
         parent = db.get(Task, body.parent_id)
         if not parent or parent.project_id != project.id:
@@ -153,7 +173,25 @@ def get_task(task_id: int, db: Session = Depends(get_db), user: User = Depends(g
 
 @router.put("/{task_id}", response_model=TaskRead)
 def update_task(task_id: int, body: TaskUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    task = _load_task(db, task_id, user, require_manage=True)
+    task = _load_task(db, task_id, user)
+
+    # 변경하려는 항목 분류에 따른 세분 권한 검사
+    schedule_fields = ("plan_start", "plan_end", "workload")
+    progress_fields = ("actual_start", "actual_end", "user_adjustment", "effective_progress")
+    basic_fields = (
+        "title", "description", "group_id", "parent_id", "status", "task_type",
+        "is_issue", "issue_symptom", "issue_cause", "issue_impact", "issue_solution",
+        "issue_resolve_plan_date", "issue_resolve_actual_date", "issue_resolve_result",
+    )
+    needed: set[str] = set()
+    if any(getattr(body, f) is not None for f in schedule_fields):
+        needed.add("task.edit_schedule")
+    if any(getattr(body, f) is not None for f in progress_fields):
+        needed.add("task.update_progress")
+    if any(getattr(body, f) is not None for f in basic_fields):
+        needed.add("task.edit_basic")
+    for p in needed:
+        require_perm(db, user, p, task.project)
 
     # 일정 변경 이력 기록
     schedule_changed = (
@@ -195,7 +233,7 @@ def update_task(task_id: int, body: TaskUpdate, db: Session = Depends(get_db), u
 
 @router.delete("/{task_id}")
 def delete_task(task_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    task = _load_task(db, task_id, user, require_manage=True)
+    task = _load_task(db, task_id, user, perm="task.delete")
     task.is_deleted = True  # Soft delete
     audit(db, user.id, "delete", "Task", task.id)
     db.commit()
@@ -205,7 +243,7 @@ def delete_task(task_id: int, db: Session = Depends(get_db), user: User = Depend
 # ---------- Children & Issues ----------
 @router.post("/{task_id}/children", response_model=TaskRead)
 def create_child(task_id: int, body: TaskCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    task = _load_task(db, task_id, user, require_manage=True)
+    task = _load_task(db, task_id, user, perm="task.create")
     child = Task(
         project_id=task.project_id, group_id=task.group_id, parent_id=task.id, title=body.title,
         description=body.description, plan_start=body.plan_start, plan_end=body.plan_end,
@@ -223,7 +261,7 @@ def create_child(task_id: int, body: TaskCreate, db: Session = Depends(get_db), 
 
 @router.post("/{task_id}/issues", response_model=TaskRead)
 def create_issue(task_id: int, body: TaskCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    task = _load_task(db, task_id, user)
+    task = _load_task(db, task_id, user, perm="task.manage_issues")
     issue = Task(
         project_id=task.project_id, group_id=task.group_id, parent_id=task.id, title=body.title,
         description=body.description, plan_start=body.plan_start, plan_end=body.plan_end,
@@ -246,7 +284,7 @@ def create_issue(task_id: int, body: TaskCreate, db: Session = Depends(get_db), 
 # ---------- Assignments ----------
 @router.post("/{task_id}/assignments", response_model=AssignmentRead)
 def add_assignment(task_id: int, body: AssignmentCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    task = _load_task(db, task_id, user, require_manage=True)
+    task = _load_task(db, task_id, user, perm="task.assign")
     existing = db.query(TaskAssignment).filter_by(task_id=task.id, user_id=body.user_id).first()
     if existing:
         existing.workload_hours = body.workload_hours
@@ -263,7 +301,7 @@ def add_assignment(task_id: int, body: AssignmentCreate, db: Session = Depends(g
 
 @router.delete("/{task_id}/assignments/{user_id}")
 def remove_assignment(task_id: int, user_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    task = _load_task(db, task_id, user, require_manage=True)
+    task = _load_task(db, task_id, user, perm="task.assign")
     db.query(TaskAssignment).filter_by(task_id=task.id, user_id=user_id).delete()
     audit(db, user.id, "unassign", "TaskAssignment", task.id, reason=f"remove user={user_id}")
     db.commit()
@@ -274,11 +312,10 @@ def remove_assignment(task_id: int, user_id: int, db: Session = Depends(get_db),
 @router.post("/{task_id}/progress", response_model=ProgressUpdateRead)
 def add_progress(task_id: int, body: ProgressUpdateCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     task = _load_task(db, task_id, user)
-    # 담당자 또는 관리자만 작성 가능
-    role_name = user.role.name if user.role else ""
+    # 담당자, 또는 '진척률 기록' 권한이 있는 사용자만 작성 가능
     is_assignee = any(a.user_id == user.id for a in task.assignments)
-    if not is_assignee and role_name not in ("System Administrator", "Project Manager"):
-        raise HTTPException(status_code=403, detail="담당자 또는 관리자만 진행상황을 입력할 수 있습니다.")
+    if not is_assignee and not has_perm(db, user, "task.update_progress", task.project):
+        raise HTTPException(status_code=403, detail="담당자이거나 진척률 기록 권한이 있어야 진행상황을 입력할 수 있습니다.")
     pu = ProgressUpdate(
         task_id=task.id, author_id=user.id,
         current_status=body.current_status, work_done=body.work_done, problems=body.problems,

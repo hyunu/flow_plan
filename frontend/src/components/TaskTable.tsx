@@ -7,11 +7,12 @@ import { ProgressBar, StatusBadge } from './ui'
 interface Props {
   tasks: Task[]
   userId?: number
+  filter?: 'delayed' | 'unresolved'
   onSelect: (taskId: number) => void
   onUserChange?: (userId: number | null) => void
 }
 
-export function TaskTable({ tasks, userId, onSelect, onUserChange }: Props) {
+export function TaskTable({ tasks, userId, filter, onSelect, onUserChange }: Props) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -56,6 +57,8 @@ export function TaskTable({ tasks, userId, onSelect, onUserChange }: Props) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     const match = (t: Task) => {
+      if (filter === 'delayed' && (t.delay_days ?? 0) <= 0) return false
+      if (filter === 'unresolved' && !t.is_issue) return false
       if (userFilter != null && !t.assignments.some((a) => a.user_id === userFilter)) return false
       if (statusFilter !== 'all' && t.status !== statusFilter) return false
       if (q) {
@@ -79,7 +82,7 @@ export function TaskTable({ tasks, userId, onSelect, onUserChange }: Props) {
       if (r.kind === 'group') return visibleGroups.has(r.gid)
       return match(r.task)
     })
-  }, [allRows, query, statusFilter, userFilter, collapsed])
+  }, [allRows, query, statusFilter, userFilter, collapsed, filter])
 
   const statuses = ['all', 'not_started', 'in_progress', 'delayed', 'blocked', 'completed']
 

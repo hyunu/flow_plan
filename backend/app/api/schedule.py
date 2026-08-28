@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.permissions import get_project_or_403
+from app.core.permissions import get_project_or_403, require_perm
 from app.core.ratelimit import rate_limit
 from app.core.security import get_current_user
 from app.models.entities import Project, User
@@ -75,6 +75,7 @@ def list_forecasts(project_id: int, db: Session = Depends(get_db), user: User = 
 @router.post("/forecast", response_model=ForecastRead)
 def make_forecast(project_id: int, body: ForecastCreate | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     project = get_project_or_403(db, project_id, user)
+    require_perm(db, user, "forecast.manage", project)
     forecast = create_forecast(db, project)
     if body:
         if body.forecast_finish:

@@ -6,6 +6,7 @@ from app.core.permissions import (
     SYSTEM_ADMIN,
     audit,
     get_project_or_403,
+    require_perm,
 )
 from app.core.security import get_current_user
 from app.models.entities import (
@@ -49,9 +50,7 @@ def create_project(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    role_name = user.role.name if user.role else ""
-    if role_name not in (SYSTEM_ADMIN, "Project Manager"):
-        raise HTTPException(status_code=403, detail="프로젝트 생성 권한이 없습니다.")
+    require_perm(db, user, "project.create")
     project = Project(name=body.name, description=body.description, manager_id=body.manager_id or user.id)
     db.add(project)
     db.flush()
@@ -86,7 +85,8 @@ def update_project(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    project = get_project_or_403(db, project_id, user, require_manage=True)
+    project = get_project_or_403(db, project_id, user)
+    require_perm(db, user, "project.edit", project)
     before = project.name
     if body.name is not None:
         project.name = body.name
@@ -104,7 +104,8 @@ def update_project(
 
 @router.delete("/{project_id}")
 def delete_project(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    project = get_project_or_403(db, project_id, user, require_manage=True)
+    project = get_project_or_403(db, project_id, user)
+    require_perm(db, user, "project.delete", project)
     project.is_deleted = True  # Soft delete
     audit(db, user.id, "delete", "Project", project.id, reason="프로젝트 삭제(soft)")
     db.commit()
@@ -131,7 +132,8 @@ def add_member(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    project = get_project_or_403(db, project_id, user, require_manage=True)
+    project = get_project_or_403(db, project_id, user)
+    require_perm(db, user, "project.manage_members", project)
     member = db.query(ProjectMember).filter_by(project_id=project.id, user_id=body.user_id).first()
     if member:
         member.role_in_project = body.role_in_project
@@ -150,7 +152,8 @@ def add_member(
 
 @router.delete("/{project_id}/members/{user_id}")
 def remove_member(project_id: int, user_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    project = get_project_or_403(db, project_id, user, require_manage=True)
+    project = get_project_or_403(db, project_id, user)
+    require_perm(db, user, "project.manage_members", project)
     member = db.query(ProjectMember).filter_by(project_id=project.id, user_id=user_id).first()
     if member:
         audit(db, user.id, "remove_member", "ProjectMember", member.id, reason=f"remove user={user_id}")
