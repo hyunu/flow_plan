@@ -16,6 +16,23 @@ export interface TaskTree {
   childCounts: Map<number, number>
 }
 
+function bySchedule(a: Task, b: Task) {
+  const sa = a.early_start || a.plan_start || ''
+  const sb = b.early_start || b.plan_start || ''
+  if (sa !== sb) return sa < sb ? -1 : 1
+  const ea = a.early_finish || a.plan_end || ''
+  const eb = b.early_finish || b.plan_end || ''
+  if (ea !== eb) return ea < eb ? -1 : 1
+  return a.id - b.id
+}
+
+function byGroupThenSchedule(a: Task, b: Task) {
+  const ga = a.group_id ?? 1e9
+  const gb = b.group_id ?? 1e9
+  if (ga !== gb) return ga - gb
+  return bySchedule(a, b)
+}
+
 /** Task 목록을 DFS 순서로 트리 행으로 변환. collapsed에 포함된 부모의 자식은 숨긴다. */
 export function buildTaskTree(tasks: Task[], collapsed: Set<number>): TaskTree {
   const byParent = new Map<number | null, Task[]>()
@@ -28,7 +45,7 @@ export function buildTaskTree(tasks: Task[], collapsed: Set<number>): TaskTree {
   const rows: TaskRow[] = []
 
   const walk = (pid: number | null, depth: number, parentGuides: boolean[]) => {
-    const kids = (byParent.get(pid) || []).sort((a, b) => a.id - b.id)
+    const kids = (byParent.get(pid) || []).sort(pid == null ? byGroupThenSchedule : bySchedule)
     kids.forEach((k, i) => {
       const hasNext = i < kids.length - 1
       rows.push({ task: k, depth, guides: parentGuides, isLast: !hasNext })
@@ -130,7 +147,7 @@ export function buildGroupedTaskTree(tasks: Task[], collapsed: Set<number>): Gro
   const rows: TreeRow[] = []
 
   const walkTasks = (children: Task[], parentGuides: boolean[], depth: number) => {
-    const sorted = [...children].sort((a, b) => a.id - b.id)
+    const sorted = [...children].sort(bySchedule)
     sorted.forEach((t, i) => {
       const hasNext = i < sorted.length - 1
       rows.push({ kind: 'task', task: t, depth, guides: parentGuides, isLast: !hasNext })

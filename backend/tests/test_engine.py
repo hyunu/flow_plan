@@ -114,6 +114,11 @@ def test_schedule_engine_deterministic():
     # task1(50%, 12h 남음)은 9/3 계획 종료, 실제론 9/4까지
     t1 = next(t for t in r1.tasks if t.task_id == 1)
     assert t1.delay_days >= 0
+    assert r1.forecast_curve
+    assert r1.forecast_curve[0][0] == date(2026, 9, 2)
+    assert r1.forecast_curve[0][1] == r1.actual_progress
+    assert r1.forecast_curve[-1][1] == 100.0
+    assert r1.forecast_curve[-1][0] == r1.project_forecast_finish
 
 
 def test_schedule_engine_no_dependencies_independent():

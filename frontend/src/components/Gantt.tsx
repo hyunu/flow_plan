@@ -1,15 +1,20 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Dependency, Task } from '../api/types'
 import { TreeConnector, TreeToggle, buildTaskTree, type TaskRow } from '../lib/taskTree'
 import { IconLayout } from './icons'
-
 const DAY = 86400000
 const ROW_H = 36
 const GRP_H = 26
 const AXIS_H = 46
 const LABEL_W = 340
+const DAY_W0 = 26
+const DAY_W_MIN = 8
+const DAY_W_MAX = 72
 
-const GROUP_TINTS = ['var(--surface-100)', 'var(--surface-50)', 'var(--surface-100)', 'var(--surface-50)', 'var(--surface-100)']
+const cv = (name: string) => `rgb(var(--${name}))`
+const FONT = 'Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif'
+
+const GROUP_TINTS = [cv('surface-100'), cv('surface-50'), cv('surface-100'), cv('surface-50'), cv('surface-100')]
 
 interface Props {
   tasks: Task[]
@@ -23,6 +28,22 @@ function parse(d?: string | null): number | null {
   return isNaN(t) ? null : t
 }
 
+function fmtDate(d?: string | null) {
+  if (!d) return '—'
+  const m = d.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return d
+  return `${Number(m[2])}/${Number(m[3])}`
+}
+
+function netStart(t?: Task | null) {
+  if (!t) return undefined
+  return t.early_start || t.plan_start
+}
+function netEnd(t?: Task | null) {
+  if (!t) return undefined
+  return t.early_finish || t.plan_end
+}
+
 interface RenderRow {
   kind: 'group' | 'task'
   label?: string
@@ -33,6 +54,22 @@ interface RenderRow {
 export function Gantt({ tasks, dependencies, onSelect }: Props) {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [hoverId, setHoverId] = useState<number | null>(null)
+  const [tipPos, setTipPos] = useState({ x: 0, y: 0 })
+  const [dayW, setDayW] = useState(DAY_W0)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const dayWRef = useRef(dayW)
+  dayWRef.current = dayW
+  const pendingScrollRef = useRef<number | null>(null)
+  const panRef = useRef<{ x: number; sl: number; moved: boolean } | null>(null)
+  const skipClickRef = useRef(false)
+  const [panning, setPanning] = useState(false)
+  const hoverTask = hoverId != null ? tasks.find((t) => t.id === hoverId) : undefined
+
+  const moveTip = (e: { clientX: number; clientY: number }) => setTipPos({ x: e.clientX, y: e.clientY })
+  const enterTask = (id: number, e: { clientX: number; clientY: number }) => {
+    setHoverId(id)
+    moveTip(e)
+  }
   const toggle = (id: number) =>
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -68,20 +105,33 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
     return out
   }, [rows])
 
-  const taskY = useMemo(() => {
-    const m = new Map<number, number>()
-    let y = 0
+  const rowH = (r: RenderRow) => (r.kind === 'group' ? GRP_H : ROW_H)
+
+  const { rowTops, taskTop, H } = useMemo(() => {
+    const tops: number[] = []
+    const taskTop = new Map<number, number>()
+    let y = AXIS_H
     for (const r of renderRows) {
-      if (r.kind === 'task' && r.row) m.set(r.row.task.id, y)
-      y += 1
+      tops.push(y)
+      if (r.kind === 'task' && r.row) taskTop.set(r.row.task.id, y)
+      y += r.kind === 'group' ? GRP_H : ROW_H
     }
-    return m
+    return { rowTops: tops, taskTop, H: y }
   }, [renderRows])
 
   const { start, dayCount } = useMemo(() => {
     const dates: number[] = []
     for (const t of tasks) {
-      for (const d of [t.baseline_start, t.baseline_end, t.plan_start, t.plan_end, t.actual_start, t.actual_end]) {
+      for (const d of [
+        t.baseline_start,
+        t.baseline_end,
+        t.plan_start,
+        t.plan_end,
+        t.early_start,
+        t.early_finish,
+        t.actual_start,
+        t.actual_end,
+      ]) {
         const ts = parse(d)
         if (ts != null) dates.push(ts)
       }
@@ -96,9 +146,50 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
     return { start: s.getTime(), end: e.getTime(), dayCount: Math.ceil((e.getTime() - s.getTime()) / DAY) + 1 }
   }, [tasks])
 
-  const DAY_W = 26
+  const DAY_W = dayW
   const W = Math.max(dayCount * DAY_W + 24, 720)
-  const H = AXIS_H + renderRows.length * ROW_H + renderRows.filter((r) => r.kind === 'group').length * 0
+
+  const zoomTo = (next: number, anchorClientX?: number) => {
+    const el = scrollRef.current
+    const current = dayWRef.current
+    const clamped = Math.min(DAY_W_MAX, Math.max(DAY_W_MIN, next))
+    if (Math.abs(clamped - current) < 0.2) return
+    const rect = el?.getBoundingClientRect()
+    const cx = anchorClientX ?? (rect ? rect.left + rect.width / 2 : 0)
+    const contentX = el && rect ? el.scrollLeft + (cx - rect.left) : 0
+    const day = current > 0 ? contentX / current : 0
+    pendingScrollRef.current = day * clamped - (cx - (rect?.left ?? 0))
+    setDayW(clamped)
+  }
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    const sl = pendingScrollRef.current
+    if (el && sl != null) {
+      el.scrollLeft = sl
+      pendingScrollRef.current = null
+    }
+  }, [dayW])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      const horiz = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)
+      const pinchZoom = e.ctrlKey || e.metaKey
+      if (horiz && !pinchZoom) {
+        e.preventDefault()
+        el.scrollLeft += e.shiftKey && Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX
+        return
+      }
+      e.preventDefault()
+      const dy = pinchZoom ? e.deltaY : e.deltaY
+      const factor = dy > 0 ? 1 / 1.18 : 1.18
+      zoomTo(dayWRef.current * factor, e.clientX)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
 
   const x = (d?: string | null) => {
     const ts = parse(d)
@@ -134,23 +225,23 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
       if (dow === 1 || i === 0) weekTicks.push({ x: i * DAY_W, label: `${d.getDate()}일` })
     }
     return { monthBands, weekendCols, weekTicks }
-  }, [start, dayCount])
+  }, [start, dayCount, DAY_W])
 
   // 의존성 화살표 (양쪽 모두 크리티컬이면 critical 체인 엣지)
   const cpSet = useMemo(() => new Set(tasks.filter((t) => t.is_critical).map((t) => t.id)), [tasks])
 
   const edges = dependencies
     .map((d) => {
-      const p = taskY.get(d.predecessor_id)
-      const s = taskY.get(d.successor_id)
+      const p = taskTop.get(d.predecessor_id)
+      const s = taskTop.get(d.successor_id)
       if (p == null || s == null) return null
       const pred = tasks.find((t) => t.id === d.predecessor_id)
       const succ = tasks.find((t) => t.id === d.successor_id)
-      const pe = bar(pred?.plan_start, pred?.plan_end)
-      const ss = bar(succ?.plan_start, succ?.plan_end)
+      const pe = bar(netStart(pred), netEnd(pred))
+      const ss = bar(netStart(succ), netEnd(succ))
       if (!pe || !ss) return null
-      const y1 = AXIS_H + p * ROW_H + ROW_H / 2
-      const y2 = AXIS_H + s * ROW_H + ROW_H / 2
+      const y1 = p + ROW_H / 2
+      const y2 = s + ROW_H / 2
       return {
         x1: pe.x + pe.w,
         y1,
@@ -163,10 +254,8 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
 
   const edgeCurve = (e: { x1: number; y1: number; x2: number; y2: number }) =>
     `M ${e.x1} ${e.y1} C ${(e.x1 + e.x2) / 2} ${e.y1}, ${(e.x1 + e.x2) / 2} ${e.y2}, ${e.x2 - 6} ${e.y2}`
-  const arrowHead = (e: { x1: number; y1: number; x2: number; y2: number }, s: number) =>
-    `${e.x2},${e.y2 - s} ${e.x2 + s + 1},${e.y2} ${e.x2},${e.y2 + s}`
 
-  const yOf = (idx: number) => AXIS_H + idx * ROW_H
+  const yOf = (idx: number) => rowTops[idx]
 
   return (
     <div className="card overflow-hidden">
@@ -175,32 +264,64 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
           <span className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 ring-1 ring-brand-100 grid place-items-center">
             <IconLayout size={15} />
           </span>
-          <h2 className="font-semibold text-ink-900">간트 차트</h2>
+          <div>
+            <h2 className="font-semibold text-ink-900">간트 차트</h2>
+            <p className="text-[11px] text-slate-400 mt-0.5">세로 휠·핀치로 확대 · 가로 스크롤·드래그로 이동</p>
+          </div>
         </div>
-        <div className="flex items-center gap-4 text-[11px] text-slate-500">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4 text-[11px] text-slate-500">
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-1.5 rounded bg-slate-200 ring-1 ring-slate-300" /> Baseline
+            <span className="w-3 h-1.5 rounded bg-slate-400" /> Baseline
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-1.5 rounded bg-gradient-to-r from-brand-500 to-brand-600" /> 계획
+            <span className="w-3 h-1.5 rounded bg-slate-500" /> 계획
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-1.5 rounded bg-emerald-500" /> 진척
+            <span className="w-3 h-1.5 rounded bg-ink-900" /> 진척
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-1.5 rounded bg-amber-400 ring-1 ring-amber-500" /> 예측
+            <span className="w-3 h-1.5 rounded bg-slate-400/70 ring-1 ring-dashed ring-slate-500" /> 예측
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-1.5 rounded bg-red-500" /> Critical
+            <span className="w-3 h-1.5 rounded bg-slate-400 ring-2 ring-ink-900" /> Critical
           </span>
+          </div>
+          <div className="flex items-center gap-0.5 ml-2">
+            {Math.abs(dayW - DAY_W0) > 0.4 && (
+              <button
+                type="button"
+                onClick={() => setDayW(DAY_W0)}
+                className="px-2 py-1 rounded-lg text-[11px] text-slate-500 hover:text-ink-700 hover:bg-surface-100"
+              >
+                전체보기
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => zoomTo(dayW * 1.25)}
+              className="w-7 h-7 rounded-lg text-slate-500 hover:text-ink-700 hover:bg-surface-100 text-sm"
+              title="확대"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={() => zoomTo(dayW / 1.25)}
+              className="w-7 h-7 rounded-lg text-slate-500 hover:text-ink-700 hover:bg-surface-100 text-sm"
+              title="축소"
+            >
+              −
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="flex">
+      <div className="flex" onMouseLeave={() => setHoverId(null)}>
         {/* 라벨 열 */}
-        <div className="shrink-0 border-r border-slate-100 bg-card" style={{ width: LABEL_W, height: H }}>
+        <div className="shrink-0 border-r border-slate-100 bg-card leading-none" style={{ width: LABEL_W, height: H }}>
           <div
-            className="sticky top-0 z-20 flex items-center px-5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 bg-surface-50 border-b border-slate-100"
+            className="box-border sticky top-0 z-20 flex items-center px-5 text-[12px] font-semibold text-ink-700 bg-surface-50 border-b border-slate-100"
             style={{ height: AXIS_H }}
           >
             Task
@@ -209,8 +330,8 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
             r.kind === 'group' ? (
               <div
                 key={`g${idx}`}
-                className="flex items-center px-5 text-[10px] font-bold uppercase tracking-wider"
-                style={{ height: GRP_H, backgroundColor: r.tint, color: 'var(--ink-700)' }}
+                className="box-border shrink-0 overflow-hidden flex items-center px-5 text-[12px] font-bold text-ink-900"
+                style={{ height: GRP_H, backgroundColor: r.tint }}
               >
                 {r.label}
               </div>
@@ -218,13 +339,12 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
               <div
                 key={`r${r.row!.task.id}`}
                 onClick={() => onSelect(r.row!.task.id)}
-                onMouseEnter={() => setHoverId(r.row!.task.id)}
-                onMouseLeave={() => setHoverId(null)}
-                className={`gantt-row group flex items-center gap-2 px-4 cursor-pointer border-b border-slate-50 transition-colors ${
+                onMouseEnter={(e) => enterTask(r.row!.task.id, e)}
+                onMouseMove={moveTip}
+                className={`gantt-row group box-border shrink-0 overflow-hidden flex items-center gap-2 px-4 cursor-pointer border-b border-slate-50 transition-colors ${
                   hoverId === r.row!.task.id ? 'bg-brand-50/60' : 'hover:bg-slate-50'
                 }`}
                 style={{ height: ROW_H }}
-                title={r.row!.task.title}
               >
                 <span className="text-[10px] text-slate-300 w-5 shrink-0">
                   {r.row!.task.is_issue ? '⚠' : ''}
@@ -255,8 +375,47 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
         </div>
 
         {/* 타임라인 */}
-        <div className="flex-1 overflow-x-auto">
-          <svg width={W} height={H}>
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-x-auto leading-none"
+          style={{ cursor: panning ? 'grabbing' : 'grab' }}
+          onDoubleClick={() => setDayW(DAY_W0)}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return
+            const node = scrollRef.current
+            if (!node) return
+            panRef.current = { x: e.clientX, sl: node.scrollLeft, moved: false }
+            node.setPointerCapture(e.pointerId)
+          }}
+          onPointerMove={(e) => {
+            const p = panRef.current
+            const node = scrollRef.current
+            if (!p || !node) return
+            const dx = e.clientX - p.x
+            if (!p.moved && Math.abs(dx) < 4) return
+            p.moved = true
+            skipClickRef.current = true
+            if (!panning) setPanning(true)
+            node.scrollLeft = p.sl - dx
+          }}
+          onPointerUp={() => {
+            skipClickRef.current = !!panRef.current?.moved
+            panRef.current = null
+            setPanning(false)
+          }}
+          onPointerCancel={() => {
+            skipClickRef.current = false
+            panRef.current = null
+            setPanning(false)
+          }}
+          onClickCapture={(e) => {
+            if (skipClickRef.current) {
+              e.stopPropagation()
+              skipClickRef.current = false
+            }
+          }}
+        >
+          <svg width={W} height={H} className="block overflow-visible">
             {/* 그룹 밴드 배경 */}
             {renderRows.map((r, idx) =>
               r.kind === 'group' ? (
@@ -265,62 +424,40 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
             )}
             {/* 주말 음영 */}
             {weekendCols.map((c) => (
-              <rect key={c.x} x={c.x} y={0} width={DAY_W * 2} height={H} fill="var(--surface-50)" />
+              <rect key={c.x} x={c.x} y={0} width={DAY_W * 2} height={H} fill={cv('slate-400')} opacity={0.12} />
             ))}
             {/* 월 밴드 */}
             {monthBands.map((m) => (
               <g key={m.x}>
-                <rect x={m.x} y={0} width={m.w} height={AXIS_H / 2} fill="var(--surface-100)" />
-                <text x={m.x + 6} y={AXIS_H / 2 - 7} fontSize={11} fontWeight={600} fill="var(--ink-700)">
+                <rect x={m.x} y={0} width={m.w} height={AXIS_H / 2} fill={cv('surface-100')} />
+                <text x={m.x + 6} y={AXIS_H / 2 - 6} fontSize={12} fontWeight={700} fill={cv('ink-900')} fontFamily={FONT}>
                   {m.label}
                 </text>
               </g>
             ))}
-            <line x1={0} y1={AXIS_H / 2} x2={W} y2={AXIS_H / 2} stroke="var(--slate-200)" />
+            <line x1={0} y1={AXIS_H / 2} x2={W} y2={AXIS_H / 2} stroke={cv('slate-400')} opacity={0.45} />
             {weekTicks.map((t) => (
-              <text key={t.x} x={t.x + 3} y={AXIS_H - 8} fontSize={9} fill="var(--slate-400)">
+              <text key={t.x} x={t.x + 3} y={AXIS_H - 7} fontSize={10} fontWeight={600} fill={cv('ink-900')} fontFamily={FONT}>
                 {t.label}
               </text>
             ))}
-            <line x1={0} y1={AXIS_H} x2={W} y2={AXIS_H} stroke="var(--slate-200)" />
+            <line x1={0} y1={AXIS_H} x2={W} y2={AXIS_H} stroke={cv('slate-400')} opacity={0.45} />
 
             {/* 오늘 */}
             {todayX > 0 && todayX < W && (
               <g>
-                <line x1={todayX} y1={0} x2={todayX} y2={H} stroke="var(--ink-900)" strokeWidth={1.4} strokeDasharray="4,3" opacity={0.85} />
-                <rect x={todayX - 15} y={AXIS_H + 3} width={30} height={15} rx={7.5} fill="var(--ink-900)" />
-                <text x={todayX} y={AXIS_H + 13} fontSize={8.5} fontWeight={700} fill="var(--card)" textAnchor="middle">
+                <line x1={todayX} y1={0} x2={todayX} y2={H} stroke={cv('ink-900')} strokeWidth={1.4} strokeDasharray="4,3" opacity={0.85} />
+                <rect x={todayX - 15} y={AXIS_H + 3} width={30} height={15} rx={7.5} fill={cv('ink-900')} />
+                <text x={todayX} y={AXIS_H + 14} fontSize={9} fontWeight={700} fill={cv('card')} textAnchor="middle" fontFamily={FONT}>
                   오늘
                 </text>
               </g>
             )}
 
-            {/* 일반 의존성 */}
-            {edges
-              .filter((e) => !e.critical)
-              .map((e, i) => (
-                <g key={`e${i}`} opacity={0.3}>
-                  <path d={edgeCurve(e)} stroke="var(--slate-400)" strokeWidth={1.1} fill="none" />
-                  <polygon points={arrowHead(e, 3.5)} fill="var(--slate-400)" />
-                </g>
-              ))}
-
-            {/* 크리티컬 경로 연결선 (가장 위에) */}
-            {edges
-              .filter((e) => e.critical)
-              .map((e, i) => (
-                <g key={`c${i}`}>
-                  <path d={edgeCurve(e)} stroke="var(--ink-900)" strokeWidth={5} fill="none" opacity={0.16} />
-                  <path d={edgeCurve(e)} stroke="var(--ink-900)" strokeWidth={2.3} fill="none" />
-                  <circle cx={e.x1} cy={e.y1} r={4} fill="var(--ink-900)" stroke="var(--card)" strokeWidth={1.4} />
-                  <polygon points={arrowHead(e, 4.5)} fill="var(--ink-900)" />
-                </g>
-              ))}
-
             {/* 그룹 라벨 */}
             {renderRows.map((r, idx) =>
               r.kind === 'group' ? (
-                <text key={`gl${idx}`} x={10} y={yOf(idx) + GRP_H / 2 + 3.5} fontSize={10} fontWeight={700} fill="var(--ink-700)">
+                <text key={`gl${idx}`} x={10} y={yOf(idx) + GRP_H / 2 + 4} fontSize={11} fontWeight={700} fill={cv('ink-900')} fontFamily={FONT}>
                   {r.label}
                 </text>
               ) : null,
@@ -335,7 +472,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
               const hovered = hoverId === t.id
 
               const baseline = bar(t.baseline_start, t.baseline_end)
-              const plan = bar(t.plan_start, t.plan_end)
+              const plan = bar(netStart(t), netEnd(t))
               const actual = bar(t.actual_start, t.actual_end)
               const fx = parse(t.forecast_finish)
 
@@ -343,14 +480,15 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                 <g
                   key={t.id}
                   onClick={() => onSelect(t.id)}
-                  onMouseEnter={() => setHoverId(t.id)}
-                  onMouseLeave={() => setHoverId(null)}
+                  onMouseEnter={(e) => enterTask(t.id, e)}
+                  onMouseMove={moveTip}
                   className="cursor-pointer"
                 >
-                  {hovered && <rect x={0} y={yOf(idx)} width={W} height={ROW_H} fill="var(--slate-200)" opacity={0.3} />}
+                  <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill="transparent" />
+                  {hovered && <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill={cv('slate-400')} opacity={0.16} pointerEvents="none" />}
 
                   {/* Baseline */}
-                  {baseline && <rect x={baseline.x} y={y + 7} width={baseline.w} height={5} rx={2.5} fill="var(--slate-200)" />}
+                  {baseline && <rect x={baseline.x} y={y + 7} width={baseline.w} height={5} rx={2.5} fill={cv('slate-400')} />}
 
                   {/* 예측 연장 */}
                   {plan && fx != null && fx > plan.x + plan.w && (
@@ -360,9 +498,9 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                       width={Math.min(fx - plan.x - plan.w + DAY_W, DAY_W * 4)}
                       height={h + 2}
                       rx={5}
-                      fill="var(--slate-200)"
-                      opacity={0.7}
-                      stroke="var(--slate-400)"
+                      fill={cv('slate-400')}
+                      opacity={0.35}
+                      stroke={cv('slate-500')}
                       strokeWidth={1}
                       strokeDasharray="3,2"
                     />
@@ -372,7 +510,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                   {plan && (
                     <g>
                       {isParent ? (
-                        <rect x={plan.x} y={y - 2} width={plan.w} height={h + 4} rx={7} fill="var(--slate-300)" stroke="var(--slate-600)" strokeWidth={1.3} />
+                        <rect x={plan.x} y={y - 2} width={plan.w} height={h + 4} rx={7} fill={cv('slate-400')} stroke={cv('slate-600')} strokeWidth={1.3} />
                       ) : (
                         <rect
                           x={plan.x}
@@ -380,8 +518,8 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                           width={plan.w}
                           height={h}
                           rx={6}
-                          fill={t.is_issue ? 'var(--slate-400)' : t.is_critical ? 'var(--slate-200)' : 'var(--slate-300)'}
-                          stroke={t.is_issue ? 'var(--slate-600)' : t.is_critical ? 'var(--ink-900)' : 'var(--slate-600)'}
+                          fill={t.is_critical ? cv('slate-400') : cv('slate-500')}
+                          stroke={t.is_critical ? cv('ink-900') : cv('slate-600')}
                           strokeWidth={t.is_critical ? 1.6 : 1}
                         />
                       )}
@@ -393,33 +531,125 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                           width={Math.max((plan.w - 3) * (t.effective_progress / 100), 0)}
                           height={h - 3}
                           rx={5}
-                          fill={t.is_issue ? 'var(--slate-500)' : t.is_critical ? 'var(--ink-900)' : 'var(--slate-600)'}
-                          opacity={t.is_issue ? 0.85 : 0.9}
+                          fill={t.is_issue ? cv('slate-600') : cv('ink-900')}
+                          opacity={t.is_issue ? 0.85 : 0.92}
                         />
                       )}
-                      {plan.w > 44 && !isParent && (
-                        <text x={plan.x + plan.w - 7} y={y + h / 2 + 3} fontSize={8.5} fontWeight={700} fill="var(--card)" textAnchor="end">
-                          {Math.round(t.effective_progress)}%
-                        </text>
-                      )}
-                      {isParent && (
-                        <text x={plan.x + 7} y={y + h / 2 + 3} fontSize={9} fontWeight={700} fill="var(--ink-700)">
-                          {Math.round(t.effective_progress)}%
-                        </text>
-                      )}
+                      <text
+                        x={plan.x + plan.w + 6}
+                        y={y + h / 2 + 4}
+                        fontSize={11}
+                        fontWeight={700}
+                        fill={cv('ink-900')}
+                        stroke={cv('card')}
+                        strokeWidth={4}
+                        paintOrder="stroke"
+                        fontFamily={FONT}
+                      >
+                        {Math.round(t.effective_progress)}%
+                      </text>
                     </g>
                   )}
 
                   {/* 실제 구간 */}
                   {actual && (
-                    <rect x={actual.x} y={y - 2} width={actual.w} height={h + 4} rx={6} fill="none" stroke="var(--ink-700)" strokeWidth={1.4} strokeDasharray="3,2" />
+                    <rect x={actual.x} y={y - 2} width={actual.w} height={h + 4} rx={6} fill="none" stroke={cv('ink-700')} strokeWidth={1.4} strokeDasharray="3,2" />
                   )}
+                </g>
+              )
+            })}
+
+            {/* 의존성 연결 — 바 위에 그려 시작점/끝점이 바에 가리지 않게 */}
+            {edges.map((e, i) => {
+              const crit = e.critical
+              const stroke = cv(crit ? 'chart-mark' : 'ink-700')
+              const r = crit ? 6.5 : 5
+              return (
+                <g key={`edge${i}`} pointerEvents="none" opacity={crit ? 1 : 0.92}>
+                  <path d={edgeCurve(e)} stroke={stroke} strokeWidth={crit ? 2.8 : 1.6} fill="none" />
+                  <circle cx={e.x1} cy={e.y1} r={r} fill={cv('card')} stroke={stroke} strokeWidth={2.2} />
+                  <circle cx={e.x1} cy={e.y1} r={2} fill={stroke} />
+                  <circle cx={e.x2} cy={e.y2} r={r} fill={stroke} stroke={cv('card')} strokeWidth={2} />
+                  <polygon
+                    points={`${e.x2 + r + 6},${e.y2} ${e.x2 + 1},${e.y2 - r - 1} ${e.x2 + 1},${e.y2 + r + 1}`}
+                    fill={stroke}
+                    stroke={cv('card')}
+                    strokeWidth={1}
+                    strokeLinejoin="round"
+                  />
                 </g>
               )
             })}
           </svg>
         </div>
       </div>
+
+      {hoverTask && (
+        <div
+          className="fixed z-[80] pointer-events-none w-max max-w-[18rem] rounded-lg bg-slate-900 text-white text-[14px] leading-snug px-3 py-2.5 shadow-xl border border-white/10"
+          style={{ left: tipPos.x + 14, top: tipPos.y + 14 }}
+        >
+          <div className="font-semibold text-[15px] truncate">{hoverTask.title}</div>
+          <div className="mt-1.5 space-y-0.5 text-[13px] text-slate-200">
+            <div className="flex gap-1.5">
+              <span className="text-slate-400 shrink-0">담당자</span>
+              <span className="font-medium text-white">
+                {!(hoverTask.assignments?.length)
+                  ? '미지정'
+                  : hoverTask.assignments
+                      .map((a) => {
+                        const name = a.user_name || `#${a.user_id}`
+                        return a.workload_hours ? `${name} (${a.workload_hours}h)` : name
+                      })
+                      .join(', ')}
+              </span>
+            </div>
+            <div className="flex gap-1.5">
+              <span className="text-slate-400 shrink-0">계획</span>
+              <span className="font-medium text-white">
+                {fmtDate(hoverTask.plan_start)} ~ {fmtDate(hoverTask.plan_end)}
+                <span className="ml-1 text-slate-300">{Math.round(hoverTask.workload)}h</span>
+              </span>
+            </div>
+            {(hoverTask.early_start || hoverTask.early_finish) && (
+              <div className="flex gap-1.5">
+                <span className="text-slate-400 shrink-0">가능 시작</span>
+                <span className="font-medium text-white">
+                  {fmtDate(hoverTask.early_start)} ~ {fmtDate(hoverTask.early_finish)}
+                  {hoverTask.is_critical ? <span className="ml-1 text-slate-400">CP</span> : null}
+                </span>
+              </div>
+            )}
+            <div className="flex gap-1.5">
+              <span className="text-slate-400 shrink-0">최초 계획</span>
+              <span>
+                {fmtDate(hoverTask.baseline_start)} ~ {fmtDate(hoverTask.baseline_end)}
+              </span>
+            </div>
+            <div className="flex gap-1.5">
+              <span className="text-slate-400 shrink-0">실적</span>
+              <span className="font-medium text-white">
+                {hoverTask.actual_start || hoverTask.actual_end
+                  ? `${fmtDate(hoverTask.actual_start)} ~ ${fmtDate(hoverTask.actual_end)}`
+                  : '미입력'}
+              </span>
+            </div>
+            <div className="flex gap-1.5">
+              <span className="text-slate-400 shrink-0">진척</span>
+              <span className="font-medium text-white">{Math.round(hoverTask.effective_progress)}%</span>
+              {hoverTask.delay_days != null && hoverTask.delay_days > 0 && (
+                <span className="text-red-300">지연 +{hoverTask.delay_days}일</span>
+              )}
+            </div>
+            {hoverTask.forecast_finish && (
+              <div className="flex gap-1.5">
+                <span className="text-slate-400 shrink-0">예측 완료</span>
+                <span>{fmtDate(hoverTask.forecast_finish)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -3,13 +3,17 @@ import { Link } from 'react-router-dom'
 export function InfoTip({ text, className = '', corner = false }: { text: string; className?: string; corner?: boolean }) {
   return (
     <span
-      className={`group ${corner ? 'absolute right-3 bottom-3' : 'relative'} inline-flex align-middle z-[5] ${className}`}
+      className={`group/tip ${corner ? 'absolute right-3 bottom-3' : 'relative'} inline-flex align-middle z-[5] ${className}`}
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }}
     >
       <span className="inline-flex w-[15px] h-[15px] rounded-full bg-slate-300 text-white text-[10px] leading-none items-center justify-center font-bold cursor-help select-none">
         i
       </span>
       <span
-        className={`pointer-events-none absolute z-50 w-64 rounded-lg bg-slate-900 text-white text-[11px] leading-relaxed font-normal px-3 py-2 shadow-xl border border-white/10 opacity-0 translate-y-[-2px] group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-150 ${
+        className={`pointer-events-none absolute z-50 w-64 rounded-lg bg-slate-900 text-white text-[11px] leading-relaxed font-normal px-3 py-2 shadow-xl border border-white/10 opacity-0 translate-y-[-2px] group-hover/tip:opacity-100 group-hover/tip:translate-y-0 transition-all duration-150 ${
           corner ? 'right-0 bottom-full mb-1.5' : 'left-1/2 -translate-x-1/2 top-full mt-1.5'
         }`}
       >

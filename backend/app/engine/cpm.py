@@ -150,12 +150,15 @@ class CPMNetwork:
             node.is_critical = abs(node.total_float) < 1e-6
 
     def critical_path_ids(self) -> list[int]:
-        critical: list[int] = []
-        # 결정적 순서: ID 오름차순
-        for i in sorted(self.nodes):
-            if self.nodes[i].is_critical:
-                critical.append(i)
-        return critical
+        critical = [n for n in self.nodes.values() if n.is_critical]
+        critical.sort(
+            key=lambda n: (
+                n.earliest_start or date.max,
+                n.earliest_finish or date.max,
+                n.id,
+            )
+        )
+        return [n.id for n in critical]
 
 
 def build_network(

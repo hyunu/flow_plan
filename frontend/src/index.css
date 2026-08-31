@@ -23,6 +23,7 @@
     --slate-800: 30 41 59;
     --slate-900: 15 23 42;
     --slate-950: 2 6 23;
+    --chart-mark: 15 23 42;
   }
   .dark {
     color-scheme: dark;
@@ -44,6 +45,7 @@
     --slate-800: 51 65 85;
     --slate-900: 15 23 42;
     --slate-950: 2 6 23;
+    --chart-mark: 255 255 255;
   }
   html {
     -webkit-font-smoothing: antialiased;

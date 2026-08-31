@@ -203,21 +203,23 @@ export function TaskDetail() {
       </div>
 
       {/* 일정 비교 */}
-      <div className="card p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <IconClock size={15} className="text-slate-400" />
+      <div className="card px-4 py-3">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <IconClock size={14} className="text-slate-400" />
           <h3 className="text-sm font-semibold text-ink-900">일정 비교</h3>
         </div>
-        <div className="space-y-1">
+        <div>
           {scheduleRows.map((r) => (
-            <div key={r.label} className="flex items-center gap-4 py-2.5 px-3 rounded-xl hover:bg-surface-50 transition-colors">
-              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${r.dot}`} />
-              <span className="text-sm text-slate-500 w-28 shrink-0">{r.label}</span>
-              <span className="text-sm font-medium text-ink-900 flex-1">
+            <div key={r.label} className="flex items-center gap-2.5 py-1.5 px-1 rounded-md hover:bg-surface-50 transition-colors">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${r.dot}`} />
+              <span className="text-[13px] text-slate-500 w-[7.5rem] shrink-0">{r.label}</span>
+              <span className="text-[13px] font-medium text-ink-900 w-[7.5rem] shrink-0 tabular-nums">
                 {r.start ? `${r.start.slice(5)} ~ ${r.end?.slice(5) ?? '-'}` : '—'}
               </span>
-              {r.w != null && <span className="text-sm text-slate-500 w-16 text-right">{Math.round(r.w)}h</span>}
-              {r.note && <span className="text-[11px] text-slate-400 w-16 text-right">{r.note}</span>}
+              <span className="text-[13px] text-slate-500 w-10 shrink-0 tabular-nums">
+                {r.w != null ? `${Math.round(r.w)}h` : ''}
+              </span>
+              {r.note ? <span className="text-[11px] text-slate-400">{r.note}</span> : null}
             </div>
           ))}
         </div>

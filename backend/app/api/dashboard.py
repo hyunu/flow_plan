@@ -1,4 +1,5 @@
 import threading
+from datetime import date
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -9,12 +10,13 @@ from app.core.security import get_current_user
 from app.models.entities import (
     AIAnalysis,
     Milestone,
+    ProgressSnapshot,
     ScheduleChange,
     Task,
     User,
 )
 from app.services.ai_service import build_project_facts
-from app.services.schedule_service import compute_project_schedule
+from app.services.schedule_service import compute_project_schedule, upsert_progress_snapshot
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -47,10 +49,21 @@ def _generate_risk_async(project_id: int) -> None:
 def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     project = get_project_or_403(db, project_id, user)
     result = compute_project_schedule(db, project)
+    upsert_progress_snapshot(db, project, result)
+    db.commit()
+    snapshots = (
+        db.query(ProgressSnapshot)
+        .filter_by(project_id=project.id)
+        .order_by(ProgressSnapshot.snapshot_date)
+        .all()
+    )
 
     milestones = db.query(Milestone).filter_by(project_id=project.id).order_by(Milestone.sort_order).all()
     delayed = [t for t in result.tasks if t.delay_days > 0]
-    critical = [t for t in result.tasks if t.is_critical]
+    critical = sorted(
+        [t for t in result.tasks if t.is_critical],
+        key=lambda t: (t.early_start or date.max, t.early_finish or date.max, t.task_id),
+    )
     issues = db.query(Task).filter_by(project_id=project.id, is_issue=True, is_deleted=False).all()
 
     # 사용자별 작업량
@@ -92,6 +105,11 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
         "expected_delay_days": result.expected_delay_days,
         "risk_level": "WARNING" if result.expected_delay_days > 0 else "NORMAL",
         "plan_curve": [{"date": d.isoformat(), "pct": pct} for d, pct in result.plan_curve],
+        "forecast_curve": [{"date": d.isoformat(), "pct": pct} for d, pct in result.forecast_curve],
+        "progress_snapshots": [
+            {"date": s.snapshot_date.isoformat(), "actual": s.actual_progress, "plan": s.plan_progress}
+            for s in snapshots
+        ],
         "milestones": [
             {"id": m.id, "name": m.name, "progress": m.progress, "status": m.status,
              "start_date": m.start_date, "end_date": m.end_date}

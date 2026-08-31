@@ -273,6 +273,8 @@ export function Dashboard() {
             expectedDelayDays={data.expected_delay_days}
             milestones={data.milestones}
             planCurve={data.plan_curve}
+            forecastCurve={data.forecast_curve}
+            progressSnapshots={data.progress_snapshots}
             onRefresh={load}
           />
         </div>

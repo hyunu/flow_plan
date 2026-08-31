@@ -57,6 +57,7 @@ class ScheduleResult:
     tasks: list[TaskResult] = field(default_factory=list)
     critical_path_ids: list[int] = field(default_factory=list)
     plan_curve: list[tuple[date, float]] = field(default_factory=list)  # (date, 계획 진척률%)
+    forecast_curve: list[tuple[date, float]] = field(default_factory=list)  # 오늘 이후 예측 진척률%
 
 
 def _schedule_progress(t: EngineTaskInput, cal: WorkingCalendar, today: date, count_done: bool = True) -> float:
@@ -113,6 +114,70 @@ def _build_plan_curve(
     guard = 0
     while d <= hi and guard < 4000:
         out.append((d, _plan_curve_at(tasks, cal, child_ids, d)))
+        d += timedelta(days=1)
+        guard += 1
+    return out
+
+
+def _task_forecast_pct(
+    t: EngineTaskInput,
+    cal: WorkingCalendar,
+    d: date,
+    today: date,
+    effective: float,
+    fs: date | None,
+    ff: date | None,
+) -> float:
+    """날짜 d의 예측 진척률 — 오늘까지는 현재 실적, 이후는 예측 CPM 구간에서 남은 작업량을 작업일로 소화."""
+    if t.status == "completed":
+        return 100.0
+    if d <= today:
+        return effective
+    if not ff:
+        return effective
+    earn_from = max(fs or today, today + timedelta(days=1))
+    if d < earn_from:
+        return effective
+    if d >= ff:
+        return 100.0
+    total = cal.count_workdays(earn_from, ff)
+    if total <= 0:
+        return 100.0
+    elapsed = cal.count_workdays(earn_from, d)
+    return round(min(100.0, effective + (100.0 - effective) * elapsed / total), 1)
+
+
+def _build_forecast_curve(
+    tasks: list[EngineTaskInput],
+    forecast_nodes: dict[int, TaskNode],
+    cal: WorkingCalendar,
+    child_ids: set[int],
+    today: date,
+    forecast_finish: date | None,
+) -> list[tuple[date, float]]:
+    """오늘~프로젝트 예측 완료일의 일별 예측 진척.
+    각 잎 작업은 예측 ES 전까지 현재 실적을 유지하고, ES~EF에서 남은 %를 작업일에 배분한다."""
+    leaves = [t for t in tasks if t.id not in child_ids]
+    if not leaves or not forecast_finish:
+        return []
+    hi = max(forecast_finish, today)
+    out: list[tuple[date, float]] = []
+    d = today
+    guard = 0
+    while d <= hi and guard < 4000:
+        acc = 0.0
+        wsum = 0.0
+        for t in leaves:
+            w = max(t.workload, 1.0)
+            wsum += w
+            fnode = forecast_nodes.get(t.id)
+            eff = 100.0 if t.status == "completed" else t.effective_progress
+            acc += _task_forecast_pct(
+                t, cal, d, today, eff,
+                fnode.earliest_start if fnode else t.plan_start,
+                fnode.earliest_finish if fnode else t.plan_end,
+            ) * w
+        out.append((d, round(acc / wsum, 1) if wsum else 0.0))
         d += timedelta(days=1)
         guard += 1
     return out
@@ -239,9 +304,10 @@ def run_schedule_engine(
     plan_progress = round(plan_progress_acc / weight_sum, 1) if weight_sum else 0.0
     actual_progress = round(actual_progress_acc / weight_sum, 1) if weight_sum else 0.0
 
+    # 달력 일수(계획 완료일 → 예측 완료일). 차트 축·날짜 라벨과 같은 단위.
     expected_delay = 0
     if planned_finish and forecast_finish:
-        expected_delay = max(0, project_cal.count_workdays(planned_finish, forecast_finish))
+        expected_delay = max(0, (forecast_finish - planned_finish).days)
 
     return ScheduleResult(
         project_planned_finish=planned_finish,
@@ -251,6 +317,15 @@ def run_schedule_engine(
         actual_progress=actual_progress,
         progress_gap=round(plan_progress - actual_progress, 1),
         tasks=results,
-        critical_path_ids=[tr.task_id for tr in sorted(results, key=lambda x: x.task_id) if tr.is_critical],
+        critical_path_ids=[
+            tr.task_id
+            for tr in sorted(
+                (t for t in results if t.is_critical),
+                key=lambda t: (t.early_start or date.max, t.early_finish or date.max, t.task_id),
+            )
+        ],
         plan_curve=_build_plan_curve(tasks, project_cal, child_ids, today),
+        forecast_curve=_build_forecast_curve(
+            tasks, forecast_nodes, project_cal, child_ids, today, forecast_finish
+        ),
     )

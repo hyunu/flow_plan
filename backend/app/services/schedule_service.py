@@ -122,6 +122,24 @@ def compute_project_schedule(db: Session, project: Project, today: date | None =
     return run_schedule_engine(inputs, dep_tuples, project_cal, user_cals, today=today)
 
 
+def upsert_progress_snapshot(db: Session, project: Project, result: ScheduleResult, today: date | None = None) -> None:
+    """오늘 날짜의 계획/실적 진척을 한 줄로 남긴다. 같은 날은 덮어쓴다."""
+    from app.models.entities import ProgressSnapshot
+
+    day = today or date.today()
+    row = db.query(ProgressSnapshot).filter_by(project_id=project.id, snapshot_date=day).first()
+    if row:
+        row.actual_progress = result.actual_progress
+        row.plan_progress = result.plan_progress
+    else:
+        db.add(ProgressSnapshot(
+            project_id=project.id,
+            snapshot_date=day,
+            actual_progress=result.actual_progress,
+            plan_progress=result.plan_progress,
+        ))
+
+
 def apply_engine_progress(db: Session, project: Project, today: date | None = None) -> ScheduleResult:
     """엔진 계산 결과를 Task의 자동 진척률(schedule_progress)에 반영하고 커밋한다."""
     result = compute_project_schedule(db, project, today)
@@ -133,5 +151,7 @@ def apply_engine_progress(db: Session, project: Project, today: date | None = No
             # 유저 보정이 없으면 effective = 자동 진척률
             if task.user_adjustment == 0:
                 task.effective_progress = min(100.0, max(0.0, tr.schedule_progress + task.user_adjustment))
+    db.commit()
+    upsert_progress_snapshot(db, project, result, today)
     db.commit()
     return result

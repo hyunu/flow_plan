@@ -211,6 +211,10 @@ class TaskRead(ORMModel):
     group_name: str | None = None
     is_critical: bool = False
     delay_days: int | None = None
+    early_start: date | None = None
+    early_finish: date | None = None
+    forecast_finish: date | None = None
+    total_float: float | None = None
 
 
 class TaskDetail(TaskRead):

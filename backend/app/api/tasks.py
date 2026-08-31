@@ -22,12 +22,13 @@ from app.schemas import (
     TaskRead,
     TaskUpdate,
 )
+from app.engine.schedule import TaskResult
 from app.services.schedule_service import apply_engine_progress, compute_project_schedule
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
-def _to_read(t: Task, db: Session, crit_ids: set[int] | None = None, delays: dict[int, int] | None = None) -> TaskRead:
+def _to_read(t: Task, db: Session, engine: TaskResult | None = None) -> TaskRead:
     read = TaskRead.model_validate(t)
     read.assignments = [
         AssignmentRead(id=a.id, task_id=a.task_id, user_id=a.user_id, workload_hours=a.workload_hours,
@@ -35,10 +36,13 @@ def _to_read(t: Task, db: Session, crit_ids: set[int] | None = None, delays: dic
         for a in t.assignments
     ]
     read.group_name = t.group.name if t.group else None
-    if crit_ids is not None:
-        read.is_critical = t.id in crit_ids
-    if delays is not None:
-        read.delay_days = delays.get(t.id)
+    if engine is not None:
+        read.is_critical = engine.is_critical
+        read.delay_days = engine.delay_days
+        read.early_start = engine.early_start
+        read.early_finish = engine.early_finish
+        read.forecast_finish = engine.forecast_finish
+        read.total_float = engine.total_float
     return read
 
 
@@ -94,20 +98,17 @@ def list_tasks(
     elif project_id is not None and not include_children:
         q = q.filter(Task.parent_id.is_(None))
     tasks = q.order_by(Task.id).all()
-    crit_ids: set[int] | None = None
-    delays: dict[int, int] | None = None
+    engine_by_id: dict[int, TaskResult] = {}
     if project_id is not None:
         from app.models.entities import Project
 
         project = db.get(Project, project_id)
         try:
             result = compute_project_schedule(db, project)
-            crit_ids = {tr.task_id for tr in result.tasks if tr.is_critical}
-            delays = {tr.task_id: tr.delay_days for tr in result.tasks}
+            engine_by_id = {tr.task_id: tr for tr in result.tasks}
         except Exception:
-            crit_ids = set()
-            delays = {}
-    return [_to_read(t, db, crit_ids, delays) for t in tasks]
+            engine_by_id = {}
+    return [_to_read(t, db, engine_by_id.get(t.id)) for t in tasks]
 
 
 @router.post("", response_model=TaskRead)

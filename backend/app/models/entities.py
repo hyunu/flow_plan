@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -58,6 +58,7 @@ class Project(Base):
     milestones: Mapped[list["Milestone"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     calendar: Mapped["ProjectCalendar"] = relationship(back_populates="project", cascade="all, delete-orphan", uselist=False)
     baselines: Mapped[list["Baseline"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    progress_snapshots: Mapped[list["ProgressSnapshot"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
 class ProjectMember(Base):
@@ -251,6 +252,22 @@ class UserCalendarEntry(Base):
     note: Mapped[str | None] = mapped_column(Text)
 
     calendar: Mapped[UserCalendar] = relationship(back_populates="entries")
+
+
+class ProgressSnapshot(Base):
+    """프로젝트 진척 일별 스냅샷. S-Curve 실적선은 이 시계열로 그린다."""
+    __tablename__ = "progress_snapshots"
+    __table_args__ = (UniqueConstraint("project_id", "snapshot_date", name="uq_progress_snap_day"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    actual_progress: Mapped[float] = mapped_column(Float, default=0)
+    plan_progress: Mapped[float] = mapped_column(Float, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    project: Mapped[Project] = relationship(back_populates="progress_snapshots")
 
 
 class ProgressUpdate(Base):

@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -53,14 +55,15 @@ def schedule_analysis(project_id: int, db: Session = Depends(get_db), user: User
 def critical_path(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     project = get_project_or_403(db, project_id, user)
     result = _compute_or_conflict(db, project_id)
+    items = [t for t in result.tasks if t.is_critical]
+    items.sort(key=lambda t: (t.early_start or date.max, t.early_finish or date.max, t.task_id))
     return [
         CriticalPathItem(
             task_id=t.task_id, title=t.title, total_float=t.total_float, free_float=t.free_float,
             early_start=t.early_start, early_finish=t.early_finish,
             late_start=t.late_start, late_finish=t.late_finish, is_critical=t.is_critical,
         )
-        for t in result.tasks
-        if t.is_critical
+        for t in items
     ]
 
 

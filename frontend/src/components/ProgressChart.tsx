@@ -5,6 +5,9 @@ import { InfoTip } from './ui'
 
 const DAY = 86400000
 
+/** CSS 변수는 `R G B` 트리플이라 SVG fill/stroke에는 rgb()로 감싼다. */
+const cv = (name: string) => `rgb(var(--${name}))`
+
 interface Props {
   tasks: Task[]
   plannedFinish?: string
@@ -18,6 +21,8 @@ interface Props {
   expectedDelayDays?: number
   milestones?: { name: string; end_date?: string; progress: number }[]
   planCurve?: { date: string; pct: number }[]
+  forecastCurve?: { date: string; pct: number }[]
+  progressSnapshots?: { date: string; actual: number; plan: number }[]
   onRefresh?: () => void
 }
 
@@ -33,10 +38,53 @@ function startOfDay(ts: number): number {
   return d.getTime()
 }
 
-/** 포인트 배열 → 부드러운 path (중간점 quadratic 스무딩) */
+/** 자정 기준으로 맞추되, bounds를 넘기지 않는다. */
+function snapRange(
+  minTs: number,
+  maxTs: number,
+  bounds: { min: number; max: number },
+  minSpanDays = 3,
+): { min: number; max: number } {
+  const lo = startOfDay(bounds.min)
+  const hi = startOfDay(bounds.max)
+  let min = startOfDay(minTs)
+  let max = startOfDay(maxTs)
+  if (maxTs > max && max + DAY <= hi) max += DAY
+  if (max <= min) max = Math.min(hi, min + DAY * minSpanDays)
+  const minSpan = Math.min(DAY * minSpanDays, hi - lo)
+  if (max - min < minSpan) {
+    const mid = (min + max) / 2
+    min = startOfDay(mid - minSpan / 2)
+    max = min + minSpan
+  }
+  if (min < lo) {
+    max = Math.min(hi, max + (lo - min))
+    min = lo
+  }
+  if (max > hi) {
+    min = Math.max(lo, min - (max - hi))
+    max = hi
+  }
+  if (min < lo) min = lo
+  if (max > hi) max = hi
+  if (max <= min) return { min: lo, max: hi }
+  return { min, max }
+}
+
+function coversFull(next: { min: number; max: number }, full: { min: number; max: number }): boolean {
+  return startOfDay(next.min) <= startOfDay(full.min) && startOfDay(next.max) >= startOfDay(full.max)
+}
+
+function linearPath(pts: { x: number; y: number }[]): string {
+  if (pts.length === 0) return ''
+  return pts.map((p, i) => `${i ? 'L' : 'M'} ${p.x} ${p.y}`).join(' ')
+}
 function smoothPath(pts: { x: number; y: number }[]): string {
   if (pts.length === 0) return ''
   if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`
+  if (pts.length <= 8) {
+    return pts.map((p, i) => `${i ? 'L' : 'M'} ${p.x} ${p.y}`).join(' ')
+  }
   let d = `M ${pts[0].x} ${pts[0].y}`
   for (let i = 1; i < pts.length; i++) {
     const mx = (pts[i - 1].x + pts[i].x) / 2
@@ -52,11 +100,14 @@ export function ProgressChart({
   tasks,
   plannedFinish,
   forecastFinish,
+  planProgress,
   actualProgress,
   planEnd,
   expectedDelayDays,
   milestones = [],
   planCurve,
+  forecastCurve,
+  progressSnapshots,
   onRefresh,
 }: Props) {
   const W = 720
@@ -93,19 +144,21 @@ export function ProgressChart({
     }
     rangeDates.push(t(plannedFinish) ?? todayTs)
     if (forecastFinish) rangeDates.push(t(forecastFinish)!)
-    let min = Math.min(...rangeDates)
-    let max = Math.max(...rangeDates)
-    if (max - min < DAY * 14) {
-      min -= DAY * 7
-      max += DAY * 7
-    }
-    return { min, max }
+    const min = startOfDay(Math.min(...rangeDates))
+    const max = startOfDay(Math.max(...rangeDates))
+    return { min, max: max <= min ? min + DAY : max }
   }, [tasks, plannedFinish, forecastFinish])
 
   // 확대/축소된 날짜 구간 (null = 전체)
   const [domain, setDomain] = useState<{ min: number; max: number } | null>(null)
   const [zoomRect, setZoomRect] = useState<{ x0: number; x1: number } | null>(null)
-  const dragRef = useRef<{ startX: number } | null>(null)
+  const [panning, setPanning] = useState(false)
+  const dragRef = useRef<{
+    startX: number
+    mode: 'zoom' | 'pan'
+    originMin: number
+    originMax: number
+  } | null>(null)
 
   const effMin = domain?.min ?? globalRange.min
   const effMax = domain?.max ?? globalRange.max
@@ -118,9 +171,10 @@ export function ProgressChart({
     const parentIds = new Set(tasks.filter((x) => x.parent_id != null).map((x) => x.parent_id!))
     const leaves = tasks.filter((tt) => !parentIds.has(tt.id))
 
-    const min = effMin
-    const max = effMax
-    const days = Math.max(Math.ceil((max - min) / DAY), 2)
+    const { min, max } = domain == null ? globalRange : snapRange(effMin, effMax, globalRange)
+    // 양 끝 포함: 마지막 점이 오른쪽 축(max)에 오도록 +1
+    const nDays = Math.max(Math.round((max - min) / DAY), 1)
+    const nPts = nDays + 1
     const range = max - min
     const plotW = W - PAD.l - PAD.r
     const plotH = H - PAD.t - PAD.b
@@ -128,18 +182,18 @@ export function ProgressChart({
     const sy = (p: number) => H - PAD.b - (p / 100) * plotH
 
     // 일 단위 누적 테이블 빌더
-    const cumArr = (): number[] => new Array(days).fill(0)
-    const toIdx = (d: number) => Math.min(Math.max(Math.round((d - min) / DAY), 0), days - 1)
+    const cumArr = (): number[] => new Array(nPts).fill(0)
+    const toIdx = (d: number) => Math.min(Math.max(Math.round((d - min) / DAY), 0), nPts - 1)
 
     // 작업일(월~금) 여부/누적 — 백엔드 엔진(_schedule_progress)의 count_workdays와 동일 의미
-    const isWk = Array.from({ length: days }, (_, i) => {
+    const isWk = Array.from({ length: nPts }, (_, i) => {
       const g = new Date(min + i * DAY).getDay()
       return g >= 1 && g <= 5
     })
-    const wkAcc = new Array<number>(days).fill(0)
+    const wkAcc = new Array<number>(nPts).fill(0)
     {
       let c = 0
-      for (let i = 0; i < days; i++) {
+      for (let i = 0; i < nPts; i++) {
         if (isWk[i]) c++
         wkAcc[i] = c
       }
@@ -166,7 +220,7 @@ export function ProgressChart({
         const iE = Math.max(toIdx(e), iS)
         const total = wkCount(iS, iE)
         if (total <= 0) continue
-        for (let i = 0; i < days; i++) {
+        for (let i = 0; i < nPts; i++) {
           const d = min + i * DAY
           let f: number
           if (done || d >= e) f = 100
@@ -188,7 +242,7 @@ export function ProgressChart({
     if (backendCurve) {
       const keys = [...backendCurve.keys()].sort((a, b) => a - b)
       const lo = keys[0]
-      for (let i = 0; i < days; i++) {
+      for (let i = 0; i < nPts; i++) {
         const d = startOfDay(min + i * DAY)
         const pct = backendCurve.get(d) ?? (d < lo ? 0 : 100)
         planCum[i] = (pct * totalWork) / 100
@@ -201,69 +255,129 @@ export function ProgressChart({
     const baseCum: number[] | null = leaves.some((x) => x.baseline_start && x.baseline_end) ? cumArr() : null
     if (baseCum) fillElapsedCum(baseCum, 'baseline_start', 'baseline_end', false)
 
-    // ③ 실제(누적 실적 S-Curve): 각 task의 완료 작업량(effective)을
-    //    시작일~today 구간에 선형 배분 (과거 이력 없을 때의 합리적 근사)
+    // ③ 실제: 일별 스냅샷이 있으면 그 시계열(없는 날은 직전 값 유지). 없으면 근사 배분.
     const todayIdx = toIdx(todayTs)
     const actualCum = cumArr()
-    for (const tt of leaves) {
-      const s = t(tt.plan_start)
-      if (s == null) continue
-      const w = tt.workload > 0 ? tt.workload : 1
-      const earn = w * (tt.effective_progress / 100)
-      const i0 = toIdx(s)
-      const rampEnd = Math.min(Math.max(todayTs, s), t(tt.plan_end) ?? todayTs)
-      const i1 = Math.max(toIdx(rampEnd), i0 + 1)
-      const per = earn / (i1 - i0)
-      for (let i = i0; i < i1; i++) actualCum[i] += per
+    const snaps = (progressSnapshots ?? [])
+      .map((s) => ({ ts: t(s.date), actual: s.actual }))
+      .filter((s): s is { ts: number; actual: number } => s.ts != null)
+      .sort((a, b) => a.ts - b.ts)
+    if (snaps.length > 0) {
+      let k = 0
+      let last = 0
+      const firstTs = snaps[0].ts
+      for (let i = 0; i < nPts; i++) {
+        const ts = min + i * DAY
+        while (k < snaps.length && snaps[k].ts <= ts) {
+          last = snaps[k].actual
+          k++
+        }
+        const pct = ts < firstTs ? 0 : ts > todayTs ? last : (ts === todayTs ? actualProgress : last)
+        actualCum[i] = (pct / 100) * (totalWork > 0 ? totalWork : 1)
+      }
+    } else {
+      for (const tt of leaves) {
+        const s = t(tt.plan_start)
+        if (s == null) continue
+        const w = tt.workload > 0 ? tt.workload : 1
+        const earn = w * (tt.effective_progress / 100)
+        const i0 = toIdx(s)
+        const rampEnd = Math.min(Math.max(todayTs, s), t(tt.plan_end) ?? todayTs)
+        const i1 = Math.max(toIdx(rampEnd), i0 + 1)
+        const per = earn / (i1 - i0)
+        for (let i = i0; i < i1; i++) actualCum[i] += per
+      }
+      let ar = 0
+      for (let i = 0; i < nPts; i++) {
+        ar += actualCum[i]
+        actualCum[i] = ar
+      }
     }
-    let ar = 0
-    for (let i = 0; i < days; i++) {
-      ar += actualCum[i]
-      actualCum[i] = ar
-    }
-    // 오늘 지점이 카드(엔진) overall_progress와 정확히 일치하도록 곡선을 스케일
     let actToday = totalWork > 0 ? Math.min((actualCum[todayIdx] / totalWork) * 100, 100) : 0
     if (actualProgress > 0 && actToday > 0 && actualProgress !== actToday) {
-      const actScale = actualProgress / actToday
-      for (let i = 0; i < days; i++) actualCum[i] *= actScale
+      actualCum[todayIdx] = (actualProgress / 100) * totalWork
       actToday = actualProgress
     }
 
-    // ④ 예측(forecast): 오늘 실적부터 forecast_finish까지 100%로 직진
+    // ④ 예측: 엔진 forecast_curve (작업별 남은 %를 예측 ES~EF 작업일에 배분).
+    //    오늘 이전은 실적에 붙이고, 없으면 같은 정의로 잎 작업 forecast_finish에 배분.
     const foreEnd = t(forecastFinish) ?? t(plannedFinish) ?? max
     const foreCum: number[] | null = foreEnd > todayTs ? cumArr() : null
     if (foreCum) {
-      const curVal = (actualCum[toIdx(todayTs)] ?? 0)
       const totalW = totalWork > 0 ? totalWork : 1
-      const curPct = (curVal / totalW) * 100
-      const targetPct = 100
-      const i0 = Math.max(toIdx(todayTs), 0)
-      const i1 = Math.max(toIdx(foreEnd), i0 + 1)
-      const per = (targetPct - curPct) / (i1 - i0)
-      for (let i = 0; i < days; i++) {
-        if (i <= i0) foreCum[i] = curVal
-        else if (i >= i1) foreCum[i] = totalW
-        else foreCum[i] = curVal + per * (i - i0) * totalW
+      const todayVal =
+        todayTs >= min && todayTs <= max
+          ? (actualCum[toIdx(todayTs)] ?? 0)
+          : (actualProgress / 100) * totalW
+      const backendFore =
+        forecastCurve && forecastCurve.length > 0
+          ? new Map<number, number>(
+              forecastCurve
+                .map((c) => [t(c.date), c.pct] as const)
+                .filter((x): x is [number, number] => x[0] != null),
+            )
+          : null
+      const foreKeys = backendFore ? [...backendFore.keys()].sort((a, b) => a - b) : []
+      const pctAt = (ts: number): number => {
+        if (backendFore) {
+          const day = startOfDay(ts)
+          const exact = backendFore.get(day)
+          if (exact != null) return exact
+          let prev: number | null = null
+          for (const k of foreKeys) {
+            if (k <= day) prev = k
+            else break
+          }
+          if (prev != null) return backendFore.get(prev) ?? 100
+          return backendFore.get(foreKeys[0]) ?? actualProgress
+        }
+        return actualProgress
+      }
+      for (let i = 0; i < nPts; i++) {
+        const ts = min + i * DAY
+        if (ts <= todayTs) foreCum[i] = todayVal
+        else if (ts >= foreEnd) foreCum[i] = totalW
+        else if (backendFore) foreCum[i] = (pctAt(ts) / 100) * totalW
+        else {
+          const span = Math.max(foreEnd - todayTs, DAY)
+          foreCum[i] = todayVal + ((ts - todayTs) / span) * (totalW - todayVal)
+        }
       }
     }
 
-    // ⑤ 지연 구간 음영 (계획 종료 ~ 예측 종료)
-    const planE = t(planEnd) ?? t(plannedFinish)
+    // ⑤ 지연 구간 음영: 엔진 계획 완료일(planned_finish) ~ 예측 완료일.
+    //    작업 max(plan_end)나 마일스톤(오픈)을 쓰면 카드의 지연일과 구간이 어긋난다.
+    const planE = t(plannedFinish) ?? t(planEnd)
     const foreE = t(forecastFinish)
     const delayRegion = planE != null && foreE != null && foreE > planE
-      ? { x0: sx(planE), x1: sx(foreE) }
+      ? { x0: sx(planE), x1: sx(foreE), planTs: planE, foreTs: foreE }
       : null
 
     // ⑥ 오늘의 계획/실제 % (작업량 집계 기준 — 지표와 일치하도록 클램프)
     const planToday = totalWork > 0 ? Math.min((planCum[todayIdx] / totalWork) * 100, 100) : 0
 
-    const toPts = (arr: number[] | null, xOff = 0) =>
-      arr == null
-        ? []
-        : Array.from({ length: days }, (_, i) => ({
-            x: sx(min + i * DAY) + xOff,
-            y: totalWork > 0 ? sy((arr[i] / totalWork) * 100) : sy(0),
-          }))
+    const yOf = (arr: number[], ts: number) =>
+      totalWork > 0 ? sy((arr[toIdx(ts)] / totalWork) * 100) : sy(0)
+
+    const toPts = (arr: number[] | null, xOff = 0, endTs?: number, startTs?: number) => {
+      if (arr == null) return []
+      const pts: { x: number; y: number }[] = []
+      const push = (ts: number) => {
+        pts.push({ x: sx(Math.min(Math.max(ts, min), max)) + xOff, y: yOf(arr, ts) })
+      }
+      if (startTs != null && startTs >= min && startTs <= max) push(startTs)
+      for (let i = 0; i < nPts; i++) {
+        const ts = min + i * DAY
+        if (startTs != null && ts <= startTs) continue
+        if (endTs != null && ts > endTs) break
+        push(ts)
+      }
+      if (endTs != null && endTs >= min && endTs <= max) {
+        const lastX = pts.length ? pts[pts.length - 1].x : null
+        if (lastX == null || Math.abs(lastX - (sx(endTs) + xOff)) > 0.5) push(endTs)
+      }
+      return pts
+    }
 
     // 마일스톤 마커 (end_date 있는 것만, 범위 내) — 원 위치는 계획 진척(planCum) 곡선 기준 (상단 밀집 방지)
     const msPts = milestones
@@ -288,71 +402,160 @@ export function ProgressChart({
       msConnector = smoothPath(seg)
     }
 
+    // 계획/Baseline은 100%에 닿는 날에서 끊는다.
+    // 가로축은 예측 완료일까지라, 그 뒤를 100%로 이어 그리면 오픈 이후 긴 평탄 구간이 된다.
+    const lastFull = (arr: number[] | null) => {
+      if (!arr || totalWork <= 0) return undefined
+      for (let i = 0; i < nPts; i++) {
+        if (arr[i] / totalWork >= 0.999) return min + i * DAY
+      }
+      return undefined
+    }
+    const planDrawEnd = lastFull(planCum)
+    const baseDrawEnd = lastFull(baseCum)
+
     return {
       min, max, todayTs, totalWork, planCum, baseCum, actualCum, foreCum,
       planToday, actToday, delayRegion, msPts, msConnector,
       pts: {
-        baseline: toPts(baseCum, 0.5),
-        plan: toPts(planCum),
-        actual: toPts(actualCum),
-        forecast: toPts(foreCum),
+        baseline: toPts(baseCum, 0.5, baseDrawEnd),
+        plan: toPts(planCum, 0, planDrawEnd),
+        actual: toPts(actualCum, 0, todayTs),
+        forecast: toPts(foreCum, 0, undefined, todayTs),
       },
     }
-  }, [tasks, plannedFinish, forecastFinish, planEnd, milestones, effMin, effMax])
+  }, [tasks, plannedFinish, forecastFinish, planEnd, milestones, planCurve, forecastCurve, progressSnapshots, actualProgress, domain, effMin, effMax, globalRange])
 
-  const { min, max, todayTs, planToday, actToday, delayRegion, msPts, msConnector } = viz
+  const { min, max, todayTs, actToday, delayRegion, msPts, msConnector } = viz
   const plotW = W - PAD.l - PAD.r
   const plotH = H - PAD.t - PAD.b
   const sy = (p: number) => H - PAD.b - (p / 100) * plotH
   const sx = (d: number) => PAD.l + ((d - min) / (max - min)) * plotW
   const todayX = sx(todayTs)
+  const todayInView = todayTs >= min && todayTs <= max
+  const todayNearRight = todayInView && todayX > PAD.l + plotW * 0.78
+  const todayNearLeft = todayInView && todayX < PAD.l + plotW * 0.22
+  const actLbl = {
+    x: todayNearLeft ? todayX + 10 : todayX - 10,
+    anchor: (todayNearLeft ? 'start' : 'end') as const,
+  }
+  const planLbl = {
+    x: todayNearRight ? todayX - 10 : todayX + 10,
+    anchor: (todayNearRight ? 'end' : 'start') as const,
+  }
 
-  // 드래그 선택 → 구간 확대
+  // 드래그: 전체 뷰는 구간 확대, 확대 뷰는 좌우 이동
   const plotPX = (clientX: number, el: SVGRectElement) => {
     const cr = el.getBoundingClientRect()
     const x = PAD.l + ((clientX - cr.left) / cr.width) * plotW
     return Math.max(PAD.l, Math.min(W - PAD.r, x))
   }
+  const panTo = (originMin: number, originMax: number, startX: number, nowX: number) => {
+    const span = originMax - originMin
+    const deltaTs = -((nowX - startX) / plotW) * span
+    let min = originMin + deltaTs
+    let max = originMax + deltaTs
+    if (min < globalRange.min) {
+      min = globalRange.min
+      max = globalRange.min + span
+    }
+    if (max > globalRange.max) {
+      max = globalRange.max
+      min = globalRange.max - span
+    }
+    setDomain({ min, max })
+  }
   const onPlotDown = (e: PointerEvent<SVGRectElement>) => {
-    dragRef.current = { startX: plotPX(e.clientX, e.currentTarget) }
-    setZoomRect({ x0: plotPX(e.clientX, e.currentTarget), x1: plotPX(e.clientX, e.currentTarget) })
+    const x = plotPX(e.clientX, e.currentTarget)
+    const boxZoom = !zoomed || e.shiftKey
+    if (!boxZoom && domain) {
+      dragRef.current = { startX: x, mode: 'pan', originMin: domain.min, originMax: domain.max }
+      setPanning(true)
+    } else {
+      dragRef.current = { startX: x, mode: 'zoom', originMin: effMin, originMax: effMax }
+      setZoomRect({ x0: x, x1: x })
+    }
     ;(e.currentTarget as SVGRectElement).setPointerCapture(e.pointerId)
   }
   const onPlotMove = (e: PointerEvent<SVGRectElement>) => {
     if (!dragRef.current) return
     const x = plotPX(e.clientX, e.currentTarget)
+    if (dragRef.current.mode === 'pan') {
+      panTo(dragRef.current.originMin, dragRef.current.originMax, dragRef.current.startX, x)
+      return
+    }
     setZoomRect({ x0: Math.min(dragRef.current.startX, x), x1: Math.max(dragRef.current.startX, x) })
   }
   const onPlotUp = () => {
-    if (dragRef.current && zoomRect) {
+    if (dragRef.current?.mode === 'pan' && domain) {
+      const snapped = snapRange(domain.min, domain.max, globalRange)
+      setDomain(coversFull(snapped, globalRange) ? null : snapped)
+    } else if (dragRef.current && zoomRect) {
       const w0 = zoomRect.x0
       const w1 = zoomRect.x1
       if (w1 - w0 > 5) {
         const minD = effMin + ((w0 - PAD.l) / plotW) * (effMax - effMin)
         const maxD = effMin + ((w1 - PAD.l) / plotW) * (effMax - effMin)
-        if (maxD - minD >= DAY * 3) setDomain({ min: minD, max: maxD })
+        const snapped = snapRange(minD, maxD, globalRange)
+        if (coversFull(snapped, globalRange)) setDomain(null)
+        else if (snapped.max - snapped.min >= DAY * 3) setDomain(snapped)
       }
     }
     dragRef.current = null
     setZoomRect(null)
+    setPanning(false)
   }
   const zoomAt = (factor: number) => {
+    if (factor < 1 && domain == null) return
     const c = (effMin + effMax) / 2
     const half = (effMax - effMin) / 2 / factor
-    if (half < DAY * 3) return
-    setDomain({ min: c - half, max: c + half })
+    if (factor > 1 && half < DAY * 3) return
+    const snapped = snapRange(c - half, c + half, globalRange)
+    if (factor < 1 && coversFull(snapped, globalRange)) setDomain(null)
+    else setDomain(snapped)
   }
-  // 계획 대 실제 차이 (양수 = 계획이 높음 = 지연, 상단 Progress Gap 카드와 동일 부호)
-  const gap = planToday - actToday
+  // 계획 대비 = 실제 − 계획. +면 오늘 진척이 계획보다 높음.
+  const delta = actualProgress - planProgress
+  const calendarDelayDays = (() => {
+    const a = t(plannedFinish)
+    const b = t(forecastFinish)
+    if (a == null || b == null) return expectedDelayDays ?? 0
+    return Math.max(0, Math.round((b - a) / DAY))
+  })()
 
   const gridLines = [0, 25, 50, 75, 100].map((p) => ({ y: sy(p), p }))
 
   const xLabels = useMemo(() => {
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(min + ((max - min) / 6) * i)
-      return { x: PAD.l + (i / 6) * plotW, label: `${d.getMonth() + 1}/${d.getDate()}` }
-    })
-  }, [min, max, plotW])
+    const spanDays = Math.max(Math.round((max - min) / DAY), 1)
+    const fmt = (ts: number) => {
+      const d = new Date(ts)
+      return `${d.getMonth() + 1}/${d.getDate()}`
+    }
+    if (spanDays <= 14) {
+      return Array.from({ length: spanDays }, (_, i) => {
+        const ts = min + i * DAY
+        return {
+          x: PAD.l + ((ts + DAY / 2 - min) / (max - min)) * plotW,
+          label: fmt(ts),
+          anchor: 'middle' as const,
+        }
+      })
+    }
+    const ticks = Array.from({ length: 7 }, (_, i) => min + ((max - min) / 6) * i)
+    const extras = [t(plannedFinish), t(forecastFinish)].filter(
+      (ts): ts is number => ts != null && ts >= min && ts <= max,
+    )
+    const merged: number[] = [...ticks]
+    for (const e of extras) {
+      if (merged.every((x) => Math.abs(x - e) > DAY * 4)) merged.push(e)
+    }
+    merged.sort((a, b) => a - b)
+    return merged.map((ts, i, arr) => ({
+      x: PAD.l + ((ts - min) / (max - min)) * plotW,
+      label: fmt(ts),
+      anchor: (i === 0 ? 'start' : i === arr.length - 1 ? 'end' : 'middle') as const,
+    }))
+  }, [min, max, plotW, plannedFinish, forecastFinish])
 
   const areaPath = (pts: { x: number; y: number }[]) =>
     pts.length
@@ -364,68 +567,70 @@ export function ProgressChart({
 
       {/* 요약 지표 스트립 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
-        <div className="rounded-xl bg-surface-50 ring-1 ring-slate-200 px-3 py-2.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">실제 진척</div>
-          <div className="text-xl font-bold text-ink-900 mt-0.5">{actToday.toFixed(1)}%</div>
-        </div>
-        <div className="rounded-xl bg-surface-50 ring-1 ring-slate-200 px-3 py-2.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">계획 대비</div>
-          <div className={`text-xl font-bold mt-0.5 ${gap > 0 ? 'text-ink-900' : 'text-slate-500'}`}>
-            {gap > 0 ? '+' : ''}{gap.toFixed(1)}%p
+        {(
+          [
+            { label: '실제 진척', value: `${actualProgress.toFixed(1)}%` },
+            {
+              label: '계획 대비',
+              value: `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%p`,
+            },
+            {
+              label: '예측 완료일',
+              value: forecastFinish ? forecastFinish.slice(5) : (plannedFinish?.slice(5) ?? '—'),
+            },
+            {
+              label: '예상 지연',
+              value: calendarDelayDays > 0 ? `+${calendarDelayDays}일` : '0일',
+              hint: plannedFinish && forecastFinish
+                ? `계획 ${plannedFinish.slice(5)} → 예측 ${forecastFinish.slice(5)}`
+                : undefined,
+            },
+          ] as { label: string; value: string; hint?: string }[]
+        ).map((item) => (
+          <div key={item.label} className="rounded-xl bg-surface-50 ring-1 ring-slate-200/80 px-3 py-2.5">
+            <div className="text-xs font-semibold text-slate-400">{item.label}</div>
+            <div className="mt-1.5 text-[22px] font-bold leading-none tracking-tight text-ink-900">{item.value}</div>
+            {item.hint && <div className="mt-1.5 text-[10px] font-medium text-slate-400">{item.hint}</div>}
           </div>
-        </div>
-        <div className="rounded-xl bg-surface-50 ring-1 ring-slate-200 px-3 py-2.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">예측 완료일</div>
-          <div className="text-lg font-bold text-ink-900 mt-0.5">
-            {forecastFinish ? forecastFinish.slice(5) : (plannedFinish?.slice(5) ?? '—')}
-          </div>
-        </div>
-        <div className="rounded-xl bg-surface-50 ring-1 ring-slate-200 px-3 py-2.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">예상 지연</div>
-          <div className={`text-lg font-bold mt-0.5 ${(expectedDelayDays ?? 0) > 0 ? 'text-ink-900' : 'text-slate-500'}`}>
-            {(expectedDelayDays ?? 0) > 0 ? `+${expectedDelayDays}일` : '없음'}
-          </div>
-        </div>
+        ))}
       </div>
 
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
         <defs>
           <linearGradient id="pg-act" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#0f172a" stopOpacity="0.18" />
-            <stop offset="100%" stopColor="#0f172a" stopOpacity="0.01" />
+            <stop offset="0%" stopColor={cv('ink-900')} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={cv('ink-900')} stopOpacity="0.02" />
           </linearGradient>
           <linearGradient id="pg-plan" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#64748b" stopOpacity="0.12" />
-            <stop offset="100%" stopColor="#64748b" stopOpacity="0.01" />
+            <stop offset="0%" stopColor={cv('slate-500')} stopOpacity="0.16" />
+            <stop offset="100%" stopColor={cv('slate-500')} stopOpacity="0.02" />
           </linearGradient>
           <clipPath id="pg-zoom">
             <rect x={PAD.l} y={PAD.t - 8} width={plotW} height={plotH + 20} />
           </clipPath>
         </defs>
 
-        {/* 그리드 */}
+        {/* 가로 그리드 (축보다 연하게) */}
         {gridLines.map((g) => (
           <g key={g.p}>
-            <line x1={PAD.l} y1={g.y} x2={W - PAD.r} y2={g.y} stroke="var(--surface-100)" strokeWidth={1} />
-            <text x={PAD.l - 7} y={g.y + 3} fontSize={9.5} fill="var(--slate-400)" textAnchor="end">{g.p}%</text>
+            {g.p !== 0 && (
+              <line x1={PAD.l} y1={g.y} x2={W - PAD.r} y2={g.y} stroke={cv('slate-400')} strokeWidth={1} opacity={0.28} />
+            )}
+            <text x={PAD.l - 8} y={g.y + 3.5} fontSize={10} fontWeight={600} fill={cv('ink-700')} textAnchor="end">{g.p}%</text>
           </g>
         ))}
-        {/* x축 라벨 */}
+        {/* X축 라벨 */}
         {xLabels.map((l, i) => (
-          <text key={i} x={l.x} y={H - PAD.b + 15} fontSize={9.5} fill="var(--slate-400)" textAnchor="middle">{l.label}</text>
+          <text key={i} x={l.x} y={H - PAD.b + 16} fontSize={10} fontWeight={600} fill={cv('ink-700')} textAnchor={l.anchor}>{l.label}</text>
         ))}
-
-        {/* 축 라인: X축(라벨 위), Y축(라벨 우측) */}
-        <line x1={PAD.l} y1={sy(0)} x2={W - PAD.r} y2={sy(0)} stroke="var(--slate-300)" strokeWidth={1} />
-        <line x1={PAD.l} y1={PAD.t} x2={PAD.l} y2={sy(0)} stroke="var(--slate-300)" strokeWidth={1} />
 
         <g clipPath="url(#pg-zoom)">
 
         {/* 지연 구간 음영 */}
         {delayRegion && (
           <g>
-            <rect x={delayRegion.x0} y={sy(0)} width={delayRegion.x1 - delayRegion.x0} height={plotH + 4} fill="var(--slate-200)" opacity={0.35} />
-            <line x1={delayRegion.x0} y1={sy(0)} x2={delayRegion.x0} y2={sy(100)} stroke="var(--slate-400)" strokeWidth={0.8} strokeDasharray="3,3" opacity={0.6} />
+            <rect x={delayRegion.x0} y={PAD.t} width={delayRegion.x1 - delayRegion.x0} height={plotH} fill={cv('slate-400')} opacity={0.18} />
+            <line x1={delayRegion.x0} y1={sy(0)} x2={delayRegion.x0} y2={sy(100)} stroke={cv('slate-400')} strokeWidth={0.9} strokeDasharray="3,3" opacity={0.4} />
           </g>
         )}
 
@@ -435,69 +640,111 @@ export function ProgressChart({
 
         {/* 선 — 명암(실제>계획>예측>Baseline) + 선 스타일로 구분 */}
         {viz.pts.baseline.length > 0 && (
-          <path d={smoothPath(viz.pts.baseline)} stroke="var(--slate-300)" strokeWidth={1.2} strokeDasharray="6,4" opacity={0.8} fill="none" />
+          <path d={smoothPath(viz.pts.baseline)} stroke={cv('slate-400')} strokeWidth={1.4} strokeDasharray="6,4" opacity={0.9} fill="none" />
         )}
         {viz.pts.plan.length > 0 && (
-          <path d={smoothPath(viz.pts.plan)} stroke="var(--slate-600)" strokeWidth={2} fill="none" />
+          <path d={smoothPath(viz.pts.plan)} stroke={cv('slate-600')} strokeWidth={2.2} fill="none" />
         )}
         {viz.pts.actual.length > 0 && (
-          <path d={smoothPath(viz.pts.actual)} stroke="var(--ink-900)" strokeWidth={2.6} fill="none" />
+          <path d={smoothPath(viz.pts.actual)} stroke={cv('ink-900')} strokeWidth={2.8} fill="none" />
         )}
         {viz.pts.forecast.length > 0 && (
-          <path d={smoothPath(viz.pts.forecast)} stroke="var(--slate-500)" strokeWidth={1.8} strokeLinecap="round" strokeDasharray="0.1,4.4" fill="none" />
+          <path d={linearPath(viz.pts.forecast)} stroke={cv('slate-500')} strokeWidth={2} strokeLinecap="round" strokeDasharray="0.1,4.4" fill="none" />
         )}
 
-        {/* 오늘 라인 (+ 상단 회색 '오늘' 라벨) */}
-        <g>
-          <line x1={todayX} y1={sy(100)} x2={todayX} y2={sy(0)} stroke="var(--ink-900)" strokeWidth={1.1} strokeDasharray="3,3" opacity={0.5} />
-          <text x={todayX} y={PAD.t + 11} fontSize={8.5} fontWeight={600} fill="var(--slate-400)" textAnchor="middle">오늘</text>
-        </g>
+        {/* 오늘 라인 */}
+        {todayInView && (
+          <line x1={todayX} y1={sy(100)} x2={todayX} y2={sy(0)} stroke={cv('slate-400')} strokeWidth={1.1} strokeDasharray="3,3" opacity={0.4} />
+        )}
 
-        {/* 실제/계획 오늘 포인트 + 라벨 */}
-        <g>
-          <circle cx={todayX} cy={sy(planToday)} r={5} fill="var(--slate-600)" stroke="var(--card)" strokeWidth={2} />
-          <circle cx={todayX} cy={sy(actToday)} r={6} fill="var(--ink-900)" stroke="var(--card)" strokeWidth={2.2} />
-        </g>
-
-        {/* 오늘 값 라벨 (범위 밖일 경우 안쪽 배치) */}
-        <g fontFamily="inherit">
-          <text x={todayX - 8} y={Math.max(sy(planToday) - 9, 12)} fontSize={9.5} fontWeight={700} fill="var(--slate-600)" textAnchor="end">
-            {planToday.toFixed(1)}%
-          </text>
-          <text x={todayX - 8} y={Math.min(sy(planToday) - 21, H - PAD.b)} fontSize={9.5} fontWeight={600} fill="var(--slate-400)" textAnchor="end">
-            계획
-          </text>
-          <text x={todayX - 8} y={sy(actToday) - 9} fontSize={10} fontWeight={700} fill="var(--ink-900)" textAnchor="end">
-            {actToday.toFixed(1)}%
-          </text>
-          <text x={todayX - 8} y={sy(actToday) - 21} fontSize={9.5} fontWeight={600} fill="var(--slate-400)" textAnchor="end">
-            실제
-          </text>
-        </g>
-
-        {/* 예측 종료 표시 */}
+        {/* 계획 완료 · 예측 종료 (지연 구간의 양끝) */}
+        {delayRegion && plannedFinish && (
+          <g>
+            <circle cx={delayRegion.x0} cy={sy(100)} r={4} fill={cv('slate-600')} stroke={cv('card')} strokeWidth={1.5} />
+            <text x={delayRegion.x0 + 6} y={sy(100) + 4} fontSize={9} fontWeight={700} fill={cv('slate-600')} textAnchor="start">
+              {`계획 ${plannedFinish.slice(5)}`}
+            </text>
+          </g>
+        )}
         {viz.pts.forecast.length > 0 && (
           <g>
-            <circle cx={sx(t(forecastFinish) ?? max)} cy={sy(100)} r={4} fill="var(--slate-500)" stroke="var(--card)" strokeWidth={1.5} />
-            <text x={sx(t(forecastFinish) ?? max) - 6} y={sy(100) + 4} fontSize={9} fontWeight={700} fill="var(--slate-500)" textAnchor="end">
+            <circle cx={sx(t(forecastFinish) ?? max)} cy={sy(100)} r={4} fill={cv('slate-500')} stroke={cv('card')} strokeWidth={1.5} />
+            <text x={sx(t(forecastFinish) ?? max) - 6} y={sy(100) - 10} fontSize={9} fontWeight={700} fill={cv('slate-600')} textAnchor="end">
               {forecastFinish ? `예측 ${forecastFinish.slice(5)}` : ''}
             </text>
           </g>
         )}
 
-        {/* 마일스톤: 흰색 원(검정 보더) + 예측 곡선을 따라가는 검정 점선 연결 */}
+        {/* 마일스톤: 흰 테두리(다크에서 흰색, 라이트에서 진한 잉크) + 카드 배경 내부 */}
         {msConnector && (
-          <path d={msConnector} stroke="#000" strokeWidth={1} strokeDasharray="3,3" opacity={0.75} fill="none" />
+          <path d={msConnector} stroke={cv('ink-900')} strokeWidth={1.1} strokeDasharray="3,3" opacity={0.55} fill="none" />
         )}
-        {msPts.map((m, i) => (
-          <g key={i}>
-            <circle cx={m.x} cy={m.y} r={5.5} fill="#fff" stroke="#000" strokeWidth={1.6} />
-            <text x={m.x} y={m.y <= 20 ? m.y + 15 : m.y - 10} fontSize={8.5} fontWeight={700} fill="var(--slate-600)" textAnchor="middle">
-              {(m.name || '').slice(0, 8)}
+        {msPts.map((m, i) => {
+          const nearToday = Math.abs(m.x - todayX) < 52
+          const below = m.y <= 28 || nearToday
+          const anchor = nearToday ? (m.x <= todayX ? 'end' : 'start') : 'middle'
+          const tx = nearToday ? (m.x <= todayX ? m.x - 8 : m.x + 8) : m.x
+          const ty = below ? m.y + 16 : m.y - 11
+          return (
+            <g key={i}>
+              <circle cx={m.x} cy={m.y} r={5.5} fill={cv('card')} stroke={cv('chart-mark')} strokeWidth={1.9} />
+              <text x={tx} y={ty} fontSize={8.5} fontWeight={700} fill={cv('ink-900')} textAnchor={anchor}>
+                {(m.name || '').slice(0, 8)}
+              </text>
+            </g>
+          )
+        })}
+        </g>
+
+        {/* 오늘 마커·라벨은 clip 밖에 두어 확대 시 잘리지 않게 */}
+        {todayInView && (
+          <g>
+            <text
+              x={todayX}
+              y={PAD.t + 11}
+              fontSize={9}
+              fontWeight={700}
+              fill={cv('ink-700')}
+              textAnchor={todayNearRight ? 'end' : todayNearLeft ? 'start' : 'middle'}
+            >
+              오늘
+            </text>
+            <circle cx={todayX} cy={sy(planProgress)} r={5} fill={cv('slate-600')} stroke={cv('card')} strokeWidth={2} />
+            <circle cx={todayX} cy={sy(actToday)} r={6} fill={cv('ink-900')} stroke={cv('card')} strokeWidth={2.2} />
+            <text x={actLbl.x} y={sy(actToday) - 9} fontSize={10} fontWeight={700} fill={cv('ink-900')} textAnchor={actLbl.anchor}>
+              {actualProgress.toFixed(1)}%
+            </text>
+            <text x={actLbl.x} y={sy(actToday) - 21} fontSize={9.5} fontWeight={600} fill={cv('ink-700')} textAnchor={actLbl.anchor}>
+              실제
+            </text>
+            <text x={planLbl.x} y={sy(planProgress) - 9} fontSize={9.5} fontWeight={700} fill={cv('ink-700')} textAnchor={planLbl.anchor}>
+              {planProgress.toFixed(1)}%
+            </text>
+            <text x={planLbl.x} y={sy(planProgress) - 21} fontSize={9.5} fontWeight={600} fill={cv('ink-700')} textAnchor={planLbl.anchor}>
+              계획
             </text>
           </g>
+        )}
+
+        {(() => {
+          const fp = viz.pts.forecast.find((p) => p.x > todayX + 28)
+          if (!fp) return null
+          return (
+            <text x={fp.x} y={fp.y - 8} fontSize={9} fontWeight={600} fill={cv('slate-500')} textAnchor="start">
+              예측
+            </text>
+          )
+        })()}
+
+        {/* 축 라인: X축(날짜 라벨 위), Y축(퍼센트 라벨 우측) — 데이터보다 뒤로 물러나게 */}
+        <line x1={PAD.l} y1={sy(0)} x2={W - PAD.r} y2={sy(0)} stroke={cv('slate-400')} strokeWidth={1.15} opacity={0.55} />
+        <line x1={PAD.l} y1={PAD.t} x2={PAD.l} y2={sy(0)} stroke={cv('slate-400')} strokeWidth={1.15} opacity={0.55} />
+        {xLabels.map((l, i) => (
+          <line key={`xtick-${i}`} x1={l.x} y1={sy(0)} x2={l.x} y2={sy(0) + 5} stroke={cv('slate-400')} strokeWidth={1} opacity={0.55} />
         ))}
-        </g>
+        {gridLines.map((g) => (
+          <line key={`ytick-${g.p}`} x1={PAD.l - 5} y1={g.y} x2={PAD.l} y2={g.y} stroke={cv('slate-400')} strokeWidth={1} opacity={0.55} />
+        ))}
 
         {/* 확대 선택 영역 */}
         {zoomRect && (
@@ -506,9 +753,9 @@ export function ProgressChart({
             y={PAD.t - 4}
             width={Math.max(zoomRect.x1 - zoomRect.x0, 0)}
             height={plotH + 10}
-            fill="var(--slate-500)"
+            fill={cv('slate-500')}
             opacity={0.15}
-            stroke="var(--slate-600)"
+            stroke={cv('slate-600')}
             strokeWidth={1}
             strokeDasharray="4,3"
           />
@@ -521,29 +768,30 @@ export function ProgressChart({
           width={plotW}
           height={plotH + 20}
           fill="transparent"
-          style={{ cursor: zoomed ? 'zoom-out' : 'crosshair' }}
+          style={{ cursor: zoomed ? (panning ? 'grabbing' : 'grab') : 'crosshair' }}
           onPointerDown={onPlotDown}
           onPointerMove={onPlotMove}
           onPointerUp={onPlotUp}
+          onPointerCancel={onPlotUp}
           onDoubleClick={() => setDomain(null)}
         />
       </svg>
 
       {/* 범례 */}
-      <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px] text-slate-500 mt-3 pt-3 border-t border-slate-100">
+      <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px] text-ink-700 mt-3 pt-3 border-t border-slate-200">
         {viz.pts.baseline.length > 0 && (
-          <span className="flex items-center gap-1.5"><span className="w-4 h-0 border-t-2 border-dashed border-slate-300 inline-block" /> Baseline</span>
+          <span className="flex items-center gap-1.5"><span className="w-4 h-0 border-t-2 border-dashed border-slate-400 inline-block" /> Baseline</span>
         )}
         <span className="flex items-center gap-1.5"><span className="w-4 h-0 border-t-2 border-solid border-slate-600 inline-block" /> 계획</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-ink-900 inline-block" /> 실제</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-ink-900 inline-block" /> 실제{progressSnapshots && progressSnapshots.length > 0 ? ' (일별 스냅샷)' : ''}</span>
         {viz.pts.forecast.length > 0 && (
-          <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-dotted border-slate-500 inline-block" /> 예측</span>
+          <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-dotted border-slate-500 inline-block" /> 예측 (남은 작업·CPM)</span>
         )}
         {msPts.length > 0 && (
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full border-[1.5px] border-black inline-block bg-white" /> 마일스톤</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full inline-block bg-card" style={{ border: '1.8px solid rgb(var(--chart-mark))' }} /> 마일스톤</span>
         )}
         {delayRegion && (
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-slate-200 ring-1 ring-slate-300 inline-block" /> 지연 구간</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-slate-400/30 ring-1 ring-slate-400 inline-block" /> 지연 구간</span>
         )}
       </div>
     </>
@@ -553,13 +801,10 @@ export function ProgressChart({
     <div className="flex items-center justify-between gap-3 mb-4">
       <div>
         <h3 className="text-sm font-semibold text-ink-900">진척 곡선 (S-Curve)</h3>
-        <p className="text-[11px] text-slate-400 mt-0.5">
-          가로=날짜, 세로=누적 진척률(%) · 실제가 계획보다 아래에 있으면 지연 · 오늘 기준 {actToday.toFixed(1)}% vs{' '}
-          계획 {planToday.toFixed(1)}%
-        </p>
+        <p className="text-xs text-slate-400 mt-0.5">드래그로 확대 · 확대 후 드래그로 이동 · Shift+드래그로 재확대</p>
       </div>
       <div className="flex items-center gap-1">
-        <InfoTip text="날짜별 누적 진척률(%)을 보여주는 곡선입니다. 계획은 계획 일정을 시간 경과로 페이싱한 기준선(마지막 계획 종료일에 100%), 실제는 실제 진척 누적, 예측 점선은 예상 종료일까지의 전망입니다. 실제가 계획보다 아래에 있으면 지연입니다. 차트 영역을 드래그하면 해당 구간으로 확대되고, +/- 버튼으로 확대/축소, 더블클릭 또는 전체보기로 원래 뷰에 복귀합니다." />
+        <InfoTip text="차트에서 원하는 날짜 구간을 드래그하면 확대됩니다. 확대된 뒤에는 드래그로 좌우 이동, Shift를 누른 채 드래그하면 다시 구간 확대입니다. − 버튼·더블클릭·전체보기로 원래 크기로 돌아갑니다." />
         {zoomed && (
           <button
             onClick={() => setDomain(null)}

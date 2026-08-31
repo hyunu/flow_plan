@@ -89,6 +89,8 @@ export interface Task {
   is_critical?: boolean
   forecast_finish?: string
   total_float?: number
+  early_start?: string
+  early_finish?: string
 }
 
 export interface Dependency {
@@ -152,6 +154,8 @@ export interface DashboardData {
   expected_delay_days: number
   risk_level: string
   plan_curve?: { date: string; pct: number }[]
+  forecast_curve?: { date: string; pct: number }[]
+  progress_snapshots?: { date: string; actual: number; plan: number }[]
   milestones: Milestone[]
   critical_path: { task_id: number; title: string; delay_days: number; total_float: number }[]
   delayed_tasks: { task_id: number; title: string; delay_days: number; forecast_finish?: string }[]
