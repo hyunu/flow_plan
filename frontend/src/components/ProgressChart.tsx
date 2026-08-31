@@ -32,6 +32,14 @@ function t(d?: string | null): number | null {
   return isNaN(ts) ? null : ts
 }
 
+function dayKey(ts: number): string {
+  const d = new Date(ts)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function startOfDay(ts: number): number {
   const d = new Date(ts)
   d.setHours(0, 0, 0, 0)
@@ -78,22 +86,6 @@ function coversFull(next: { min: number; max: number }, full: { min: number; max
 function linearPath(pts: { x: number; y: number }[]): string {
   if (pts.length === 0) return ''
   return pts.map((p, i) => `${i ? 'L' : 'M'} ${p.x} ${p.y}`).join(' ')
-}
-function smoothPath(pts: { x: number; y: number }[]): string {
-  if (pts.length === 0) return ''
-  if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`
-  if (pts.length <= 8) {
-    return pts.map((p, i) => `${i ? 'L' : 'M'} ${p.x} ${p.y}`).join(' ')
-  }
-  let d = `M ${pts[0].x} ${pts[0].y}`
-  for (let i = 1; i < pts.length; i++) {
-    const mx = (pts[i - 1].x + pts[i].x) / 2
-    const my = (pts[i - 1].y + pts[i].y) / 2
-    if (i === 1) d += ` Q ${pts[i - 1].x} ${pts[i - 1].y}, ${mx} ${my}`
-    else d += ` T ${mx} ${my}`
-  }
-  d += ` L ${pts[pts.length - 1].x} ${pts[pts.length - 1].y}`
-  return d
 }
 
 export function ProgressChart({
@@ -237,15 +229,19 @@ export function ProgressChart({
     for (const tt of leaves) totalWork += tt.workload > 0 ? tt.workload : 1
     const planCum = cumArr()
     const backendCurve = planCurve && planCurve.length > 0
-      ? new Map<number, number>((planCurve.map((c) => [t(c.date), c.pct])).filter((x): x is [number, number] => x[0] != null))
+      ? new Map(planCurve.map((c) => [c.date, c.pct]))
       : null
     if (backendCurve) {
-      const keys = [...backendCurve.keys()].sort((a, b) => a - b)
+      const keys = [...backendCurve.keys()].sort()
       const lo = keys[0]
+      const hi = keys[keys.length - 1]
+      let lastPct = 0
       for (let i = 0; i < nPts; i++) {
-        const d = startOfDay(min + i * DAY)
-        const pct = backendCurve.get(d) ?? (d < lo ? 0 : 100)
-        planCum[i] = (pct * totalWork) / 100
+        const key = dayKey(min + i * DAY)
+        if (backendCurve.has(key)) lastPct = backendCurve.get(key)!
+        else if (key < lo) lastPct = 0
+        else if (key > hi) lastPct = backendCurve.get(hi) ?? 100
+        planCum[i] = (lastPct * totalWork) / 100
       }
     } else {
       fillElapsedCum(planCum, 'plan_start', 'plan_end', true)
@@ -299,8 +295,7 @@ export function ProgressChart({
       actToday = actualProgress
     }
 
-    // ④ 예측: 엔진 forecast_curve (작업별 남은 %를 예측 ES~EF 작업일에 배분).
-    //    오늘 이전은 실적에 붙이고, 없으면 같은 정의로 잎 작업 forecast_finish에 배분.
+    // ④ 예측: 오늘 이후만. 날짜 키로 조회하고, 100%에 닿으면 더 이상 그리지 않는다.
     const foreEnd = t(forecastFinish) ?? t(plannedFinish) ?? max
     const foreCum: number[] | null = foreEnd > todayTs ? cumArr() : null
     if (foreCum) {
@@ -311,34 +306,24 @@ export function ProgressChart({
           : (actualProgress / 100) * totalW
       const backendFore =
         forecastCurve && forecastCurve.length > 0
-          ? new Map<number, number>(
-              forecastCurve
-                .map((c) => [t(c.date), c.pct] as const)
-                .filter((x): x is [number, number] => x[0] != null),
-            )
+          ? new Map(forecastCurve.map((c) => [c.date, c.pct]))
           : null
-      const foreKeys = backendFore ? [...backendFore.keys()].sort((a, b) => a - b) : []
-      const pctAt = (ts: number): number => {
-        if (backendFore) {
-          const day = startOfDay(ts)
-          const exact = backendFore.get(day)
-          if (exact != null) return exact
-          let prev: number | null = null
-          for (const k of foreKeys) {
-            if (k <= day) prev = k
-            else break
-          }
-          if (prev != null) return backendFore.get(prev) ?? 100
-          return backendFore.get(foreKeys[0]) ?? actualProgress
-        }
-        return actualProgress
-      }
+      let lastFore = actualProgress
       for (let i = 0; i < nPts; i++) {
         const ts = min + i * DAY
-        if (ts <= todayTs) foreCum[i] = todayVal
-        else if (ts >= foreEnd) foreCum[i] = totalW
-        else if (backendFore) foreCum[i] = (pctAt(ts) / 100) * totalW
-        else {
+        if (ts <= todayTs) {
+          foreCum[i] = todayVal
+          continue
+        }
+        if (ts >= foreEnd) {
+          foreCum[i] = totalW
+          continue
+        }
+        if (backendFore) {
+          const key = dayKey(ts)
+          if (backendFore.has(key)) lastFore = backendFore.get(key)!
+          foreCum[i] = (lastFore / 100) * totalW
+        } else {
           const span = Math.max(foreEnd - todayTs, DAY)
           foreCum[i] = todayVal + ((ts - todayTs) / span) * (totalW - todayVal)
         }
@@ -359,27 +344,44 @@ export function ProgressChart({
     const yOf = (arr: number[], ts: number) =>
       totalWork > 0 ? sy((arr[toIdx(ts)] / totalWork) * 100) : sy(0)
 
+    const firstRise = (arr: number[] | null) => {
+      if (!arr || totalWork <= 0) return undefined
+      for (let i = 0; i < nPts; i++) {
+        if (arr[i] / totalWork >= 0.004) return min + i * DAY
+      }
+      return undefined
+    }
+
+    // 값이 같은 평탄 구간은 양 끝만 남겨 축에 붙은 긴 선·렌더 끊김을 줄인다.
     const toPts = (arr: number[] | null, xOff = 0, endTs?: number, startTs?: number) => {
       if (arr == null) return []
       const pts: { x: number; y: number }[] = []
       const push = (ts: number) => {
         pts.push({ x: sx(Math.min(Math.max(ts, min), max)) + xOff, y: yOf(arr, ts) })
       }
-      if (startTs != null && startTs >= min && startTs <= max) push(startTs)
+      const yAt = (ts: number) => yOf(arr, ts)
+      let prevY: number | null = null
+      if (startTs != null && startTs >= min && startTs <= max) {
+        push(startTs)
+        prevY = yAt(startTs)
+      }
       for (let i = 0; i < nPts; i++) {
         const ts = min + i * DAY
         if (startTs != null && ts <= startTs) continue
         if (endTs != null && ts > endTs) break
-        push(ts)
+        const y = yAt(ts)
+        if (prevY == null || Math.abs(y - prevY) > 0.35 || i === nPts - 1) {
+          push(ts)
+          prevY = y
+        }
       }
       if (endTs != null && endTs >= min && endTs <= max) {
-        const lastX = pts.length ? pts[pts.length - 1].x : null
-        if (lastX == null || Math.abs(lastX - (sx(endTs) + xOff)) > 0.5) push(endTs)
+        const last = pts[pts.length - 1]
+        if (!last || Math.abs(last.x - (sx(endTs) + xOff)) > 0.5) push(endTs)
       }
       return pts
     }
 
-    // 마일스톤 마커 (end_date 있는 것만, 범위 내) — 원 위치는 계획 진척(planCum) 곡선 기준 (상단 밀집 방지)
     const msPts = milestones
       .map((m) => ({ m, ts: t(m.end_date) }))
       .filter((x): x is { m: (typeof milestones)[number]; ts: number } => x.ts != null && x.ts >= min && x.ts <= max)
@@ -390,43 +392,61 @@ export function ProgressChart({
         ts,
       }))
 
-    // 마일스톤 연결선: 원과 원을 직선으로 잇지 않고, 해당 구간의 예측 누적 진척 곡선을 따라 그림
+    // 마일스톤은 계획 곡선을 따라 잇는다 (예측 곡선을 쓰면 오늘 이전가 오늘 실적으로 평평해져 선이 끊긴다).
     let msConnector: string | null = null
-    if (msPts.length > 1 && foreCum) {
+    if (msPts.length > 1) {
       const i0 = toIdx(msPts[0].ts)
       const i1 = toIdx(msPts[msPts.length - 1].ts)
-      const seg = Array.from({ length: i1 - i0 + 1 }, (_, k) => {
-        const i = i0 + k
-        return { x: sx(min + i * DAY), y: totalWork > 0 ? sy((foreCum[i] / totalWork) * 100) : sy(0) }
-      })
-      msConnector = smoothPath(seg)
+      const seg: { x: number; y: number }[] = []
+      let prevY: number | null = null
+      for (let i = i0; i <= i1; i++) {
+        const y = totalWork > 0 ? sy((planCum[i] / totalWork) * 100) : sy(0)
+        if (prevY == null || Math.abs(y - prevY) > 0.35 || i === i1) {
+          seg.push({ x: sx(min + i * DAY), y })
+          prevY = y
+        }
+      }
+      msConnector = linearPath(seg)
     }
 
-    // 계획/Baseline은 100%에 닿는 날에서 끊는다.
-    // 가로축은 예측 완료일까지라, 그 뒤를 100%로 이어 그리면 오픈 이후 긴 평탄 구간이 된다.
     const lastFull = (arr: number[] | null) => {
       if (!arr || totalWork <= 0) return undefined
+      let hit: number | undefined
       for (let i = 0; i < nPts; i++) {
-        if (arr[i] / totalWork >= 0.999) return min + i * DAY
+        if (arr[i] / totalWork >= 0.999) {
+          if (hit == null) hit = min + i * DAY
+        } else {
+          hit = undefined
+        }
       }
-      return undefined
+      return hit
     }
     const planDrawEnd = lastFull(planCum)
     const baseDrawEnd = lastFull(baseCum)
+    let foreDrawEnd = lastFull(foreCum)
+    if (foreDrawEnd != null && todayTs > foreDrawEnd) foreDrawEnd = undefined
+    if (foreDrawEnd == null) foreDrawEnd = foreEnd
+
+    const snapPts = snaps
+      .filter((s) => s.ts >= min && s.ts <= Math.min(max, todayTs))
+      .map((s) => ({
+        x: sx(s.ts),
+        y: sy(s.ts === todayTs ? actToday : s.actual),
+      }))
 
     return {
       min, max, todayTs, totalWork, planCum, baseCum, actualCum, foreCum,
-      planToday, actToday, delayRegion, msPts, msConnector,
+      planToday, actToday, delayRegion, msPts, msConnector, snapPts,
       pts: {
-        baseline: toPts(baseCum, 0.5, baseDrawEnd),
-        plan: toPts(planCum, 0, planDrawEnd),
-        actual: toPts(actualCum, 0, todayTs),
-        forecast: toPts(foreCum, 0, undefined, todayTs),
+        baseline: toPts(baseCum, 0.5, baseDrawEnd, firstRise(baseCum)),
+        plan: toPts(planCum, 0, planDrawEnd, firstRise(planCum)),
+        actual: toPts(actualCum, 0, todayTs, snaps[0]?.ts ?? firstRise(actualCum)),
+        forecast: toPts(foreCum, 0, foreDrawEnd, todayTs),
       },
     }
   }, [tasks, plannedFinish, forecastFinish, planEnd, milestones, planCurve, forecastCurve, progressSnapshots, actualProgress, domain, effMin, effMax, globalRange])
 
-  const { min, max, todayTs, actToday, delayRegion, msPts, msConnector } = viz
+  const { min, max, todayTs, actToday, delayRegion, msPts, msConnector, snapPts } = viz
   const plotW = W - PAD.l - PAD.r
   const plotH = H - PAD.t - PAD.b
   const sy = (p: number) => H - PAD.b - (p / 100) * plotH
@@ -559,7 +579,7 @@ export function ProgressChart({
 
   const areaPath = (pts: { x: number; y: number }[]) =>
     pts.length
-      ? `${smoothPath(pts)} L ${pts[pts.length - 1].x} ${sy(0)} L ${pts[0].x} ${sy(0)} Z`
+      ? `${linearPath(pts)} L ${pts[pts.length - 1].x} ${sy(0)} L ${pts[0].x} ${sy(0)} Z`
       : ''
 
   const chartBody = (
@@ -640,14 +660,17 @@ export function ProgressChart({
 
         {/* 선 — 명암(실제>계획>예측>Baseline) + 선 스타일로 구분 */}
         {viz.pts.baseline.length > 0 && (
-          <path d={smoothPath(viz.pts.baseline)} stroke={cv('slate-400')} strokeWidth={1.4} strokeDasharray="6,4" opacity={0.9} fill="none" />
+          <path d={linearPath(viz.pts.baseline)} stroke={cv('slate-400')} strokeWidth={1.4} strokeDasharray="6,4" opacity={0.9} fill="none" />
         )}
         {viz.pts.plan.length > 0 && (
-          <path d={smoothPath(viz.pts.plan)} stroke={cv('slate-600')} strokeWidth={2.2} fill="none" />
+          <path d={linearPath(viz.pts.plan)} stroke={cv('slate-600')} strokeWidth={2.2} fill="none" />
         )}
         {viz.pts.actual.length > 0 && (
-          <path d={smoothPath(viz.pts.actual)} stroke={cv('ink-900')} strokeWidth={2.8} fill="none" />
+          <path d={linearPath(viz.pts.actual)} stroke={cv('ink-900')} strokeWidth={2.8} fill="none" />
         )}
+        {snapPts.map((p, i) => (
+          <circle key={`snap${i}`} cx={p.x} cy={p.y} r={3.2} fill={cv('ink-900')} stroke={cv('card')} strokeWidth={1.2} />
+        ))}
         {viz.pts.forecast.length > 0 && (
           <path d={linearPath(viz.pts.forecast)} stroke={cv('slate-500')} strokeWidth={2} strokeLinecap="round" strokeDasharray="0.1,4.4" fill="none" />
         )}
@@ -657,22 +680,30 @@ export function ProgressChart({
           <line x1={todayX} y1={sy(100)} x2={todayX} y2={sy(0)} stroke={cv('slate-400')} strokeWidth={1.1} strokeDasharray="3,3" opacity={0.4} />
         )}
 
-        {/* 계획 완료 · 예측 종료 (지연 구간의 양끝) */}
-        {delayRegion && plannedFinish && (
+        {/* 지연 구간 양끝 날짜 — 100% 선이 아니라 음영 하단에 두어 오픈과 겹치지 않게 */}
+        {delayRegion && (
           <g>
-            <circle cx={delayRegion.x0} cy={sy(100)} r={4} fill={cv('slate-600')} stroke={cv('card')} strokeWidth={1.5} />
-            <text x={delayRegion.x0 + 6} y={sy(100) + 4} fontSize={9} fontWeight={700} fill={cv('slate-600')} textAnchor="start">
-              {`계획 ${plannedFinish.slice(5)}`}
-            </text>
+            {plannedFinish && (
+              <text x={delayRegion.x0 + 4} y={sy(0) - 6} fontSize={9} fontWeight={700} fill={cv('slate-600')} textAnchor="start">
+                {`계획 ${plannedFinish.slice(5)}`}
+              </text>
+            )}
+            {forecastFinish && (
+              <text x={delayRegion.x1 - 4} y={sy(0) - 6} fontSize={9} fontWeight={700} fill={cv('slate-600')} textAnchor="end">
+                {`예측 ${forecastFinish.slice(5)}`}
+              </text>
+            )}
           </g>
         )}
         {viz.pts.forecast.length > 0 && (
-          <g>
-            <circle cx={sx(t(forecastFinish) ?? max)} cy={sy(100)} r={4} fill={cv('slate-500')} stroke={cv('card')} strokeWidth={1.5} />
-            <text x={sx(t(forecastFinish) ?? max) - 6} y={sy(100) - 10} fontSize={9} fontWeight={700} fill={cv('slate-600')} textAnchor="end">
-              {forecastFinish ? `예측 ${forecastFinish.slice(5)}` : ''}
-            </text>
-          </g>
+          <circle
+            cx={viz.pts.forecast[viz.pts.forecast.length - 1].x}
+            cy={viz.pts.forecast[viz.pts.forecast.length - 1].y}
+            r={4}
+            fill={cv('slate-500')}
+            stroke={cv('card')}
+            strokeWidth={1.5}
+          />
         )}
 
         {/* 마일스톤: 흰 테두리(다크에서 흰색, 라이트에서 진한 잉크) + 카드 배경 내부 */}
