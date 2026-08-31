@@ -74,8 +74,8 @@ export function TaskFormModal({ open, projectId, groups, members, defaultParentI
   const parentOptions = tasks.filter((t) => t.id !== parent_id)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/50 backdrop-blur-[2px] p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-lift ring-1 ring-slate-200 overflow-hidden animate-fade-in max-h-[92vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-[2px] p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-lg bg-card rounded-2xl shadow-lift ring-1 ring-slate-200 overflow-hidden animate-fade-in max-h-[92vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <h3 className="font-semibold text-ink-900">태스크 추가 {parent_id ? '(하위 태스크)' : ''}</h3>
           <button onClick={onClose} className="w-7 h-7 rounded-lg text-slate-400 hover:text-ink-700 hover:bg-surface-100 transition-colors" title="닫기">

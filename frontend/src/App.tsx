@@ -10,6 +10,7 @@ import { TaskDetail } from './pages/TaskDetail'
 import { Challenges } from './pages/Challenges'
 import { Reports } from './pages/Reports'
 import { Settings } from './pages/Settings'
+import { Manual } from './pages/Manual'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { user, loaded } = useAuth()
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="/tasks/:id" element={<TaskDetail />} />
         <Route path="/challenges" element={<Challenges />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/manual" element={<Manual />} />
         <Route path="/settings" element={<AdminOnly><Settings /></AdminOnly>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

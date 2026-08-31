@@ -3,11 +3,53 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: light;
+    --bg: 245 247 251;
+    --card: 255 255 255;
+    --surface-50: 248 250 252;
+    --surface-100: 241 245 249;
+    --ink-500: 100 116 139;
+    --ink-700: 51 65 85;
+    --ink-900: 15 23 42;
+    --slate-50: 248 250 252;
+    --slate-100: 241 245 249;
+    --slate-200: 226 232 240;
+    --slate-300: 203 213 225;
+    --slate-400: 148 163 184;
+    --slate-500: 100 116 139;
+    --slate-600: 71 85 105;
+    --slate-700: 51 65 85;
+    --slate-800: 30 41 59;
+    --slate-900: 15 23 42;
+    --slate-950: 2 6 23;
+  }
+  .dark {
+    color-scheme: dark;
+    --bg: 14 20 32;
+    --card: 22 29 44;
+    --surface-50: 27 35 51;
+    --surface-100: 33 42 60;
+    --ink-500: 154 167 187;
+    --ink-700: 200 210 224;
+    --ink-900: 238 242 248;
+    --slate-50: 27 35 51;
+    --slate-100: 33 42 60;
+    --slate-200: 43 53 71;
+    --slate-300: 72 86 111;
+    --slate-400: 124 137 158;
+    --slate-500: 147 161 183;
+    --slate-600: 166 179 201;
+    --slate-700: 195 207 224;
+    --slate-800: 51 65 85;
+    --slate-900: 15 23 42;
+    --slate-950: 2 6 23;
+  }
   html {
     -webkit-font-smoothing: antialiased;
   }
   body {
-    @apply bg-surface-50 text-ink-900;
+    @apply bg-page text-ink-900 transition-colors;
   }
   button {
     -webkit-tap-highlight-color: transparent;
@@ -16,7 +58,7 @@
 
 @layer components {
   .card {
-    @apply bg-white rounded-2xl shadow-card ring-1 ring-slate-200/60;
+    @apply relative bg-card rounded-2xl shadow-card ring-1 ring-slate-200/60;
   }
   .card-hover {
     @apply transition-all hover:shadow-lift hover:ring-slate-300;
@@ -28,13 +70,13 @@
     @apply btn bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 shadow-sm;
   }
   .btn-secondary {
-    @apply btn bg-white text-ink-700 ring-1 ring-slate-200 hover:bg-surface-50 hover:ring-slate-300;
+    @apply btn bg-card text-ink-700 ring-1 ring-slate-200 hover:bg-surface-50 hover:ring-slate-300;
   }
   .btn-ghost {
     @apply btn text-ink-500 hover:bg-surface-100 hover:text-ink-700;
   }
   .input {
-    @apply w-full rounded-lg ring-1 ring-slate-200 px-3 py-2 text-sm bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-0 transition-shadow;
+    @apply w-full rounded-lg ring-1 ring-slate-200 px-3 py-2 text-sm bg-card placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-0 transition-shadow;
   }
   .label {
     @apply block text-xs font-semibold text-ink-500 mb-1.5;

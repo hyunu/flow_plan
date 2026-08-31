@@ -172,7 +172,7 @@ export function Schedule() {
               onClick={() => switchView('gantt')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 view === 'gantt'
-                  ? 'bg-white text-ink-900 shadow-card'
+                  ? 'bg-card text-ink-900 shadow-card'
                   : 'text-slate-500 hover:text-ink-700'
               }`}
             >
@@ -183,7 +183,7 @@ export function Schedule() {
               onClick={() => switchView('table')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 view === 'table'
-                  ? 'bg-white text-ink-900 shadow-card'
+                  ? 'bg-card text-ink-900 shadow-card'
                   : 'text-slate-500 hover:text-ink-700'
               }`}
             >

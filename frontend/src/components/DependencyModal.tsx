@@ -69,8 +69,8 @@ export function DependencyModal({ open, tasks, dependencies, onClose, onSaved }:
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/50 backdrop-blur-[2px] p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-xl bg-white rounded-2xl shadow-lift ring-1 ring-slate-200 overflow-hidden animate-fade-in max-h-[92vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-[2px] p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-xl bg-card rounded-2xl shadow-lift ring-1 ring-slate-200 overflow-hidden animate-fade-in max-h-[92vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <h3 className="font-semibold text-ink-900">선행 Task (의존성) 관리</h3>
           <button onClick={onClose} className="w-7 h-7 rounded-lg text-slate-400 hover:text-ink-700 hover:bg-surface-100 transition-colors" title="닫기">
@@ -126,7 +126,7 @@ export function DependencyModal({ open, tasks, dependencies, onClose, onSaved }:
                       <span className="text-slate-400 shrink-0">→</span>
                       <span className="truncate">{titleOf(tasks, d.successor_id)}</span>
                     </span>
-                    <span className="shrink-0 badge bg-white text-slate-500 ring-1 ring-slate-200">FS</span>
+                    <span className="shrink-0 badge bg-card text-slate-500 ring-1 ring-slate-200">FS</span>
                     <button
                       onClick={() => remove(d.id)}
                       className="shrink-0 w-6 h-6 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"

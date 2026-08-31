@@ -32,7 +32,7 @@ export function Login() {
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
       {/* 좌측 브랜드 패널 */}
-      <div className="hidden lg:flex flex-col justify-between p-12 bg-ink-900 text-white">
+      <div className="hidden lg:flex flex-col justify-between p-12 bg-slate-900 text-white">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-violet-500 grid place-items-center font-bold text-lg shadow-lg">
             F

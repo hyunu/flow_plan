@@ -7,21 +7,25 @@ import {
   IconBell,
   IconChallenge,
   IconLogout,
+  IconManual,
+  IconMoon,
   IconProjects,
   IconReport,
   IconSettings,
+  IconSun,
 } from './icons'
 
 const nav = [
   { to: '/projects', label: '프로젝트', icon: IconProjects },
   { to: '/challenges', label: 'Daily Challenge', icon: IconChallenge },
   { to: '/reports', label: '리포트', icon: IconReport },
+  { to: '/manual', label: '설명서', icon: IconManual },
 ]
 
 const roleTone: Record<string, string> = {
-  'System Administrator': 'bg-violet-50 text-violet-600 ring-violet-200',
-  'Project Manager': 'bg-brand-50 text-brand-600 ring-brand-200',
-  'Project Member': 'bg-emerald-50 text-emerald-600 ring-emerald-200',
+  'System Administrator': 'bg-white/10 text-white ring-white/15',
+  'Project Manager': 'bg-white/5 text-white/85 ring-white/10',
+  'Project Member': 'bg-white/8 text-white/70 ring-white/10',
 }
 
 export function Layout() {
@@ -31,6 +35,12 @@ export function Layout() {
   const [showNotifs, setShowNotifs] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === '1')
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', dark)
+    localStorage.setItem('flowplan_theme', dark ? 'dark' : 'light')
+  }, [dark])
 
   const toggleCollapse = () =>
     setCollapsed((v) => {
@@ -51,11 +61,11 @@ export function Layout() {
 const navLinkCls = ({ isActive }: { isActive: boolean }) =>
   `group relative flex items-center rounded-xl text-sm font-medium transition-all ${
     collapsed ? 'justify-center w-11 h-11 mx-auto' : 'gap-3 px-3 py-2.5'
-  } ${isActive ? 'bg-white/10 text-white shadow-inner' : 'hover:bg-white/5 hover:text-slate-200'}`
+  } ${isActive ? 'bg-white/10 text-white shadow-inner' : 'hover:bg-white/5 hover:text-white/80'}`
 
 const SidebarTip = ({ label }: { label: string }) =>
   collapsed ? (
-    <span className="pointer-events-none absolute left-full ml-2.5 top-1/2 -translate-y-1/2 whitespace-nowrap rounded-lg bg-ink-900 border border-white/10 text-slate-100 text-xs font-medium px-2.5 py-1.5 shadow-xl z-50 opacity-0 translate-x-[-4px] group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
+    <span className="pointer-events-none absolute left-full ml-2.5 top-1/2 -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 border border-white/10 text-white text-xs font-medium px-2.5 py-1.5 shadow-xl z-50 opacity-0 translate-x-[-4px] group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
       {label}
     </span>
   ) : null
@@ -64,14 +74,14 @@ const SidebarTip = ({ label }: { label: string }) =>
     collapsed ? (
       <div className="h-2" />
     ) : (
-      <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-slate-600">{text}</div>
+      <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-white/40">{text}</div>
     )
 
   return (
     <div className="min-h-screen flex">
       {/* Sidebar */}
       <aside
-        className={`bg-ink-900 text-slate-400 flex flex-col shrink-0 sticky top-0 h-screen transition-all duration-200 ${
+        className={`bg-slate-900 text-white/45 flex flex-col shrink-0 sticky top-0 h-screen transition-all duration-200 ${
           collapsed ? 'w-[68px]' : 'w-64'
         }`}
       >
@@ -98,7 +108,7 @@ const SidebarTip = ({ label }: { label: string }) =>
               <button
                 onClick={toggleCollapse}
                 aria-label="사이드바 접기"
-                className="group relative shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/10 transition-colors"
+                className="group relative shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-white/45 hover:text-white hover:bg-white/10 transition-colors"
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="m15 18-6-6 6-6" />
@@ -113,7 +123,7 @@ const SidebarTip = ({ label }: { label: string }) =>
           {sectionTitle('메뉴')}
           {nav.map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} className={navLinkCls}>
-              <Icon size={18} className={`shrink-0 text-slate-500 group-hover:text-slate-300 ${collapsed ? '' : ''}`} />
+              <Icon size={18} className={`shrink-0 text-white/40 group-hover:text-white/80 ${collapsed ? '' : ''}`} />
               {!collapsed && label}
               <SidebarTip label={label} />
             </NavLink>
@@ -122,7 +132,7 @@ const SidebarTip = ({ label }: { label: string }) =>
             <>
               {sectionTitle('시스템')}
               <NavLink to="/settings" className={navLinkCls}>
-                <IconSettings size={18} className="shrink-0 text-slate-500 group-hover:text-slate-300" />
+                <IconSettings size={18} className="shrink-0 text-white/40 group-hover:text-white/80" />
                 {!collapsed && '관리자 설정'}
                 <SidebarTip label="관리자 설정" />
               </NavLink>
@@ -139,7 +149,7 @@ const SidebarTip = ({ label }: { label: string }) =>
             {!collapsed && (
               <div className="min-w-0 flex-1">
                 <div className="text-sm text-white font-medium truncate">{user?.name}</div>
-                <span className={`badge mt-0.5 ring-1 ${roleTone[roleName] || 'bg-slate-700 text-slate-300 ring-slate-600'}`}>
+                <span className={`badge mt-0.5 ring-1 ${roleTone[roleName] || 'bg-white/10 text-white/75 ring-white/10'}`}>
                   {roleName}
                 </span>
               </div>
@@ -147,7 +157,7 @@ const SidebarTip = ({ label }: { label: string }) =>
           </div>
           <button
             onClick={() => setConfirmLogout(true)}
-            className={`group relative flex items-center rounded-lg text-[13px] text-slate-500 hover:text-white hover:bg-white/5 w-full transition-colors ${
+            className={`group relative flex items-center rounded-lg text-[13px] text-white/45 hover:text-white hover:bg-white/5 w-full transition-colors ${
               collapsed ? 'justify-center w-11 h-10 mx-auto' : 'gap-2.5 px-3 py-2'
             }`}
           >
@@ -159,8 +169,8 @@ const SidebarTip = ({ label }: { label: string }) =>
       </aside>
 
       {confirmLogout && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/50 backdrop-blur-[2px] p-4" onClick={(e) => e.target === e.currentTarget && setConfirmLogout(false)}>
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-lift ring-1 ring-slate-200 overflow-hidden animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-[2px] p-4" onClick={(e) => e.target === e.currentTarget && setConfirmLogout(false)}>
+          <div className="w-full max-w-sm bg-card rounded-2xl shadow-lift ring-1 ring-slate-200 overflow-hidden animate-fade-in">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <h3 className="font-semibold text-ink-900">로그아웃</h3>
               <button onClick={() => setConfirmLogout(false)} className="w-7 h-7 rounded-lg text-slate-400 hover:text-ink-700 hover:bg-surface-100 transition-colors" title="닫기">
@@ -188,9 +198,16 @@ const SidebarTip = ({ label }: { label: string }) =>
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-white/80 backdrop-blur border-b border-slate-200/80 flex items-center justify-between px-6 sticky top-0 z-40">
+        <header className="h-16 bg-card/80 backdrop-blur border-b border-slate-200/80 flex items-center justify-between px-6 sticky top-0 z-40">
           <div className="text-sm text-slate-400 font-medium">Flow Plan</div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setDark((v) => !v)}
+              className="p-2 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
+              title={dark ? '라이트 모드로 전환' : '다크 모드로 전환'}
+            >
+              {dark ? <IconSun size={18} /> : <IconMoon size={18} />}
+            </button>
             <div className="relative">
               <button
                 onClick={() => setShowNotifs((v) => !v)}
@@ -199,11 +216,11 @@ const SidebarTip = ({ label }: { label: string }) =>
               >
                 <IconBell size={18} />
                 {unread > 0 && (
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white" />
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-slate-500 rounded-full ring-2 ring-card" />
                 )}
               </button>
               {showNotifs && (
-                <div className="absolute right-0 mt-2 w-96 bg-white rounded-2xl shadow-lift ring-1 ring-slate-200 z-50 overflow-hidden animate-fade-in">
+                <div className="absolute right-0 mt-2 w-96 bg-card rounded-2xl shadow-lift ring-1 ring-slate-200 z-50 overflow-hidden animate-fade-in">
                   <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
                     <span className="font-semibold text-sm text-ink-900">알림</span>
                     <span className="text-xs text-slate-400">{unread}개 미확인</span>

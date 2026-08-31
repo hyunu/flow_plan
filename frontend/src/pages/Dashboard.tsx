@@ -16,7 +16,7 @@ import {
 import { ProgressChart } from '../components/ProgressChart'
 import { AISummary } from '../components/AISummary'
 import { Skeleton, SkeletonCard, SkeletonCircle, SkeletonRow, SkeletonText } from '../components/Skeleton'
-import { Badge, EmptyState, PanelHeader, ProgressBar, StatCard, StatusBadge } from '../components/ui'
+import { Badge, EmptyState, InfoTip, PanelHeader, ProgressBar, StatCard, StatusBadge } from '../components/ui'
 
 export function Dashboard() {
   const { id } = useParams()
@@ -155,11 +155,15 @@ export function Dashboard() {
           <div className="flex items-center gap-3 mt-1">
             <h1 className="text-xl font-bold text-ink-900">{data.project_name}</h1>
             <span className={`badge ring-1 ${riskChip}`}>위험도 {data.risk_level}</span>
+            <InfoTip text="프로젝트의 전반적 리스크 수준(Safety Signal)입니다. NORMAL(정상) / WARNING(지연 위험) / CRITICAL(심각)으로 구분되며, 지연 Task·예측 초과·이슈 해결 지연 등을 종합해 계산됩니다." />
           </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right text-[13px]">
-            <div className="text-slate-400">예상 완료</div>
+            <div className="text-slate-400 flex items-center justify-end gap-1">
+              예상 완료
+              <InfoTip text="현재 진척률과 Critical Path(CPM) 계산을 바탕으로 예측한 프로젝트 완료일입니다. 계획 완료일 대비 지연이 예상되면 예상 지연 일수(+N일)가 빨간색으로 표시됩니다." />
+            </div>
             <div className={`font-bold ${data.expected_delay_days > 0 ? 'text-red-600' : 'text-ink-900'}`}>
               {data.forecast_finish || '-'}
               {data.expected_delay_days > 0 && (
@@ -186,12 +190,14 @@ export function Dashboard() {
           icon={<IconProjects size={15} />}
           tone={data.progress_gap > 0 ? 'warn' : 'ok'}
           delta={{ text: `${Math.abs(data.progress_gap)}%p`, dir: data.progress_gap > 0 ? 'down' : 'up' }}
+          hint="각 태스크의 실제 진척률(effective progress)을 작업량(workload)으로 가중 평균한 값입니다. 작업량이 큰 태스크가 전체 수치에 더 큰 영향을 줍니다."
         />
         <StatCard
           label="계획 진척률"
           value={`${data.plan_progress}%`}
           sub="일정 기준 자동 계산"
           icon={<IconClock size={15} />}
+          hint="계획 일정을 순수하게 시간 경과(작업일)로 페이싱한 기준값입니다. 태스크 실제 완료 여부와 무관하게 계획 구간 안에서 '오늘까지 진행됐어야 할 비율'을 작업량 가중 평균으로 계산하며, 마지막 계획 종료일에 100%가 됩니다."
         />
         <StatCard
           label="Progress Gap"
@@ -199,6 +205,7 @@ export function Dashboard() {
           sub={data.progress_gap > 0 ? '계획 대비 지연 중' : '계획 이상 진행'}
           icon={<IconAlert size={15} />}
           tone={data.progress_gap > 0 ? 'danger' : 'ok'}
+          hint="계획 진척률 − 실제 진척률(%p)입니다. 값이 양수면 실제가 계획을 따라가지 못하고 뒤처진(지연) 상태, 음수면 계획 이상으로 진행 중인 상태를 뜻합니다."
         />
         <StatCard
           label="지연 Task"
@@ -206,6 +213,7 @@ export function Dashboard() {
           sub="자동 감지"
           icon={<IconFlag size={15} />}
           tone={data.delayed_tasks.length > 0 ? 'danger' : 'ok'}
+          hint="계획 종료일보다 예측 종료일이 늦어져 지연이 감지된 태스크 수입니다. 클릭하면 지연 태스크 목록(일정 화면)으로 이동합니다."
           to={`/projects/${projectId}/schedule?view=table&filter=delayed`}
         />
         <StatCard
@@ -214,16 +222,21 @@ export function Dashboard() {
           sub="해결 예정일 추적"
           icon={<IconAlert size={15} />}
           tone={data.issues.length > 0 ? 'warn' : 'ok'}
+          hint="아직 해결되지 않은 이슈 태스크 수입니다. 해결 예정일이 지나면 리스크로 분류되어 AI 요약과 경고에 반영됩니다."
           to={`/projects/${projectId}/schedule?view=table&filter=unresolved`}
         />
       </div>
 
       {/* AI 요약 */}
       {data.ai_summary ? (
-        <Link to={`/projects/${projectId}/schedule`} className="card p-6 bg-gradient-to-br from-brand-50/60 to-white block hover:shadow-lift transition-shadow group">
+        <Link to={`/projects/${projectId}/schedule`} className="card p-6 bg-gradient-to-br from-surface-100/60 to-card block hover:shadow-lift transition-shadow group">
           <div className="flex items-center gap-2 mb-3">
             <span className="w-7 h-7 rounded-lg bg-brand-600 text-white grid place-items-center text-sm">✨</span>
             <h3 className="text-sm font-semibold text-ink-900">AI 현황 요약</h3>
+            <InfoTip
+              corner
+              text="프로젝트 데이터(진척·지연·이슈·Critical Path)를 바탕으로 AI가 생성한 현황 요약입니다. 지연 원인, 리스크 항목, 권장 대처 순서를 파악하는 데 활용하세요. 결과는 프로젝트별로 저장·재생성됩니다."
+            />
             <span className="ml-auto text-[11px] text-brand-600 opacity-0 group-hover:opacity-100 transition-opacity">
               전체 일정 보기 →
             </span>
@@ -231,10 +244,14 @@ export function Dashboard() {
           <AISummary content={data.ai_summary} />
         </Link>
       ) : (
-        <div className="card p-6 bg-gradient-to-br from-brand-50/40 to-white">
+        <div className="card p-6 bg-gradient-to-br from-surface-100/40 to-card">
           <div className="flex items-center gap-2">
             <span className="w-7 h-7 rounded-lg bg-brand-600/20 text-brand-600 grid place-items-center text-sm animate-pulse">✨</span>
             <h3 className="text-sm font-semibold text-ink-900">AI 현황 요약</h3>
+            <InfoTip
+              corner
+              text="프로젝트 데이터를 바탕으로 AI가 생성하는 현황 요약입니다. 지연 원인·리스크·권장 대처를 제공합니다. 최초 1회 생성 후 새로고침 시 표시됩니다."
+            />
             <span className="ml-auto text-xs text-slate-400">AI 분석을 준비 중입니다... (새로고침 시 표시)</span>
           </div>
         </div>
@@ -262,6 +279,7 @@ export function Dashboard() {
         <div className="card p-6">
           <PanelHeader
             title="Milestone"
+            hint="프로젝트의 중간 목표입니다. 진행률은 일정 화면의 마일스톤 항목에서 직접 관리합니다. 하단의 계획 완료일은 현재 계획 일정(CPM)으로 계산한 완료일이며, 우측 상단 예상 완료는 여기에 예측 지연을 반영한 값입니다."
             action={
               <Link to={`/projects/${projectId}/schedule`} className="text-xs text-brand-600 hover:underline">
                 일정 보기
@@ -295,6 +313,7 @@ export function Dashboard() {
           <PanelHeader
             title="지연 Task"
             icon={<IconFlag size={15} />}
+            hint="계획 종료일보다 예측 종료일이 늦어져 지연 감지된 태스크 목록입니다. +N일은 예상 지연 일수이며, 태스크를 클릭하면 상세를 확인할 수 있습니다."
             action={
               data.delayed_tasks.length > 0 ? (
                 <Link to={`/projects/${projectId}/schedule?view=table&filter=delayed`} className="text-xs text-brand-600 hover:underline">
@@ -322,7 +341,11 @@ export function Dashboard() {
         </div>
 
         <div className="card p-6">
-          <PanelHeader title="Critical Path" icon={<IconLink size={15} />} />
+          <PanelHeader
+            title="Critical Path"
+            icon={<IconLink size={15} />}
+            hint="태스크 의존성을 따라 프로젝트 전체 완료일을 결정하는 임계 경로입니다. 이 경로의 태스크가 늦어지면 프로젝트 종료일이 그만큼 늦어집니다. float(여유일)은 해당 태스크의 시작 지연 여유분(0이면 여유 없음)입니다."
+          />
           {data.critical_path.length === 0 ? (
             <EmptyState>Critical Path Task가 없습니다</EmptyState>
           ) : (
@@ -345,6 +368,7 @@ export function Dashboard() {
           <PanelHeader
             title="Issue"
             icon={<IconAlert size={15} />}
+            hint="문제가 등록된 이슈 태스크입니다. 원인·해결 예정일을 함께 관리하며, 해결 예정일을 지나면 리스크로 반영됩니다."
             action={
 data.issues.length > 0 ? (
                 <Link to={`/projects/${projectId}/schedule?view=table&filter=unresolved`} className="text-xs text-brand-600 hover:underline">
@@ -381,7 +405,11 @@ data.issues.length > 0 ? (
       {/* 사용자 작업량 + 최근 변경 */}
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="card p-6">
-          <PanelHeader title="사용자별 작업량" icon={<IconUser size={15} />} />
+          <PanelHeader
+            title="사용자별 작업량"
+            icon={<IconUser size={15} />}
+            hint="담당자별로 배정된 작업 시간(시간)의 합계입니다. 막대는 최대 부하 담당자를 100%로 한 상대 비율이며, 지연·Critical Path 담당 태스크 수도 함께 표시됩니다."
+          />
           <div className="space-y-3">
             {data.user_workload.map((u) => (
               <Link
@@ -390,7 +418,7 @@ data.issues.length > 0 ? (
                 className="flex items-center gap-4 px-3 py-2.5 rounded-xl bg-surface-50 hover:bg-surface-100 hover:ring-1 hover:ring-brand-200 transition-all group"
                 title={`${u.name} 담당 Task 보기`}
               >
-                <div className="w-8 h-8 rounded-full bg-white ring-1 ring-slate-200 grid place-items-center text-xs font-bold text-ink-700 shrink-0">
+                <div className="w-8 h-8 rounded-full bg-surface-100 ring-1 ring-slate-200 grid place-items-center text-xs font-bold text-ink-700 shrink-0">
                   {u.name?.slice(0, 1)}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -416,6 +444,7 @@ data.issues.length > 0 ? (
           <PanelHeader
             title="최근 일정 변경"
             icon={<IconList size={15} />}
+            hint="일정(계획 시작/종료일 등)이 수정될 때마다 자동 기록되는 변경 이력입니다. 변경 전/후 종료일과 사유를 보여줍니다."
             action={
               data.recent_changes.length > 0 ? (
                 <Link to={`/projects/${projectId}/schedule`} className="text-xs text-brand-600 hover:underline">

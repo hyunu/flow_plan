@@ -9,7 +9,7 @@ const GRP_H = 26
 const AXIS_H = 46
 const LABEL_W = 340
 
-const GROUP_TINTS = ['#eef2ff', '#f5f3ff', '#ecfdf5', '#fffbeb', '#fdf2f8']
+const GROUP_TINTS = ['var(--surface-100)', 'var(--surface-50)', 'var(--surface-100)', 'var(--surface-50)', 'var(--surface-100)']
 
 interface Props {
   tasks: Task[]
@@ -198,7 +198,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
 
       <div className="flex">
         {/* 라벨 열 */}
-        <div className="shrink-0 border-r border-slate-100 bg-white" style={{ width: LABEL_W, height: H }}>
+        <div className="shrink-0 border-r border-slate-100 bg-card" style={{ width: LABEL_W, height: H }}>
           <div
             className="sticky top-0 z-20 flex items-center px-5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 bg-surface-50 border-b border-slate-100"
             style={{ height: AXIS_H }}
@@ -210,7 +210,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
               <div
                 key={`g${idx}`}
                 className="flex items-center px-5 text-[10px] font-bold uppercase tracking-wider"
-                style={{ height: GRP_H, backgroundColor: r.tint, color: '#475569' }}
+                style={{ height: GRP_H, backgroundColor: r.tint, color: 'var(--ink-700)' }}
               >
                 {r.label}
               </div>
@@ -265,31 +265,31 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
             )}
             {/* 주말 음영 */}
             {weekendCols.map((c) => (
-              <rect key={c.x} x={c.x} y={0} width={DAY_W * 2} height={H} fill="#f8fafc" />
+              <rect key={c.x} x={c.x} y={0} width={DAY_W * 2} height={H} fill="var(--surface-50)" />
             ))}
             {/* 월 밴드 */}
             {monthBands.map((m) => (
               <g key={m.x}>
-                <rect x={m.x} y={0} width={m.w} height={AXIS_H / 2} fill="#f1f5f9" />
-                <text x={m.x + 6} y={AXIS_H / 2 - 7} fontSize={11} fontWeight={600} fill="#64748b">
+                <rect x={m.x} y={0} width={m.w} height={AXIS_H / 2} fill="var(--surface-100)" />
+                <text x={m.x + 6} y={AXIS_H / 2 - 7} fontSize={11} fontWeight={600} fill="var(--ink-700)">
                   {m.label}
                 </text>
               </g>
             ))}
-            <line x1={0} y1={AXIS_H / 2} x2={W} y2={AXIS_H / 2} stroke="#e2e8f0" />
+            <line x1={0} y1={AXIS_H / 2} x2={W} y2={AXIS_H / 2} stroke="var(--slate-200)" />
             {weekTicks.map((t) => (
-              <text key={t.x} x={t.x + 3} y={AXIS_H - 8} fontSize={9} fill="#94a3b8">
+              <text key={t.x} x={t.x + 3} y={AXIS_H - 8} fontSize={9} fill="var(--slate-400)">
                 {t.label}
               </text>
             ))}
-            <line x1={0} y1={AXIS_H} x2={W} y2={AXIS_H} stroke="#e2e8f0" />
+            <line x1={0} y1={AXIS_H} x2={W} y2={AXIS_H} stroke="var(--slate-200)" />
 
             {/* 오늘 */}
             {todayX > 0 && todayX < W && (
               <g>
-                <line x1={todayX} y1={0} x2={todayX} y2={H} stroke="#ef4444" strokeWidth={1.4} strokeDasharray="4,3" opacity={0.85} />
-                <rect x={todayX - 15} y={AXIS_H + 3} width={30} height={15} rx={7.5} fill="#ef4444" />
-                <text x={todayX} y={AXIS_H + 13} fontSize={8.5} fontWeight={700} fill="#fff" textAnchor="middle">
+                <line x1={todayX} y1={0} x2={todayX} y2={H} stroke="var(--ink-900)" strokeWidth={1.4} strokeDasharray="4,3" opacity={0.85} />
+                <rect x={todayX - 15} y={AXIS_H + 3} width={30} height={15} rx={7.5} fill="var(--ink-900)" />
+                <text x={todayX} y={AXIS_H + 13} fontSize={8.5} fontWeight={700} fill="var(--card)" textAnchor="middle">
                   오늘
                 </text>
               </g>
@@ -300,8 +300,8 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
               .filter((e) => !e.critical)
               .map((e, i) => (
                 <g key={`e${i}`} opacity={0.3}>
-                  <path d={edgeCurve(e)} stroke="#94a3b8" strokeWidth={1.1} fill="none" />
-                  <polygon points={arrowHead(e, 3.5)} fill="#94a3b8" />
+                  <path d={edgeCurve(e)} stroke="var(--slate-400)" strokeWidth={1.1} fill="none" />
+                  <polygon points={arrowHead(e, 3.5)} fill="var(--slate-400)" />
                 </g>
               ))}
 
@@ -310,17 +310,17 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
               .filter((e) => e.critical)
               .map((e, i) => (
                 <g key={`c${i}`}>
-                  <path d={edgeCurve(e)} stroke="#ef4444" strokeWidth={5} fill="none" opacity={0.16} />
-                  <path d={edgeCurve(e)} stroke="#ef4444" strokeWidth={2.3} fill="none" />
-                  <circle cx={e.x1} cy={e.y1} r={4} fill="#ef4444" stroke="#fff" strokeWidth={1.4} />
-                  <polygon points={arrowHead(e, 4.5)} fill="#ef4444" />
+                  <path d={edgeCurve(e)} stroke="var(--ink-900)" strokeWidth={5} fill="none" opacity={0.16} />
+                  <path d={edgeCurve(e)} stroke="var(--ink-900)" strokeWidth={2.3} fill="none" />
+                  <circle cx={e.x1} cy={e.y1} r={4} fill="var(--ink-900)" stroke="var(--card)" strokeWidth={1.4} />
+                  <polygon points={arrowHead(e, 4.5)} fill="var(--ink-900)" />
                 </g>
               ))}
 
             {/* 그룹 라벨 */}
             {renderRows.map((r, idx) =>
               r.kind === 'group' ? (
-                <text key={`gl${idx}`} x={10} y={yOf(idx) + GRP_H / 2 + 3.5} fontSize={10} fontWeight={700} fill="#64748b">
+                <text key={`gl${idx}`} x={10} y={yOf(idx) + GRP_H / 2 + 3.5} fontSize={10} fontWeight={700} fill="var(--ink-700)">
                   {r.label}
                 </text>
               ) : null,
@@ -347,10 +347,10 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                   onMouseLeave={() => setHoverId(null)}
                   className="cursor-pointer"
                 >
-                  {hovered && <rect x={0} y={yOf(idx)} width={W} height={ROW_H} fill="#eef2ff" opacity={0.35} />}
+                  {hovered && <rect x={0} y={yOf(idx)} width={W} height={ROW_H} fill="var(--slate-200)" opacity={0.3} />}
 
                   {/* Baseline */}
-                  {baseline && <rect x={baseline.x} y={y + 7} width={baseline.w} height={5} rx={2.5} fill="#e2e8f0" />}
+                  {baseline && <rect x={baseline.x} y={y + 7} width={baseline.w} height={5} rx={2.5} fill="var(--slate-200)" />}
 
                   {/* 예측 연장 */}
                   {plan && fx != null && fx > plan.x + plan.w && (
@@ -360,9 +360,9 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                       width={Math.min(fx - plan.x - plan.w + DAY_W, DAY_W * 4)}
                       height={h + 2}
                       rx={5}
-                      fill="#fef3c7"
+                      fill="var(--slate-200)"
                       opacity={0.7}
-                      stroke="#f59e0b"
+                      stroke="var(--slate-400)"
                       strokeWidth={1}
                       strokeDasharray="3,2"
                     />
@@ -372,7 +372,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                   {plan && (
                     <g>
                       {isParent ? (
-                        <rect x={plan.x} y={y - 2} width={plan.w} height={h + 4} rx={7} fill="#c7d2fe" stroke="#4f46e5" strokeWidth={1.3} />
+                        <rect x={plan.x} y={y - 2} width={plan.w} height={h + 4} rx={7} fill="var(--slate-300)" stroke="var(--slate-600)" strokeWidth={1.3} />
                       ) : (
                         <rect
                           x={plan.x}
@@ -380,8 +380,8 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                           width={plan.w}
                           height={h}
                           rx={6}
-                          fill={t.is_issue ? '#fde68a' : t.is_critical ? '#fecaca' : '#e0e7ff'}
-                          stroke={t.is_issue ? '#f59e0b' : t.is_critical ? '#ef4444' : '#6366f1'}
+                          fill={t.is_issue ? 'var(--slate-400)' : t.is_critical ? 'var(--slate-200)' : 'var(--slate-300)'}
+                          stroke={t.is_issue ? 'var(--slate-600)' : t.is_critical ? 'var(--ink-900)' : 'var(--slate-600)'}
                           strokeWidth={t.is_critical ? 1.6 : 1}
                         />
                       )}
@@ -393,17 +393,17 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                           width={Math.max((plan.w - 3) * (t.effective_progress / 100), 0)}
                           height={h - 3}
                           rx={5}
-                          fill={t.is_issue ? '#f59e0b' : t.is_critical ? '#ef4444' : '#4f46e5'}
+                          fill={t.is_issue ? 'var(--slate-500)' : t.is_critical ? 'var(--ink-900)' : 'var(--slate-600)'}
                           opacity={t.is_issue ? 0.85 : 0.9}
                         />
                       )}
                       {plan.w > 44 && !isParent && (
-                        <text x={plan.x + plan.w - 7} y={y + h / 2 + 3} fontSize={8.5} fontWeight={700} fill="#fff" textAnchor="end">
+                        <text x={plan.x + plan.w - 7} y={y + h / 2 + 3} fontSize={8.5} fontWeight={700} fill="var(--card)" textAnchor="end">
                           {Math.round(t.effective_progress)}%
                         </text>
                       )}
                       {isParent && (
-                        <text x={plan.x + 7} y={y + h / 2 + 3} fontSize={9} fontWeight={700} fill="#4338ca">
+                        <text x={plan.x + 7} y={y + h / 2 + 3} fontSize={9} fontWeight={700} fill="var(--ink-700)">
                           {Math.round(t.effective_progress)}%
                         </text>
                       )}
@@ -412,7 +412,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
 
                   {/* 실제 구간 */}
                   {actual && (
-                    <rect x={actual.x} y={y - 2} width={actual.w} height={h + 4} rx={6} fill="none" stroke="#10b981" strokeWidth={1.4} strokeDasharray="3,2" />
+                    <rect x={actual.x} y={y - 2} width={actual.w} height={h + 4} rx={6} fill="none" stroke="var(--ink-700)" strokeWidth={1.4} strokeDasharray="3,2" />
                   )}
                 </g>
               )

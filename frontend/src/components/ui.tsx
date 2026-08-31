@@ -1,5 +1,24 @@
 import { Link } from 'react-router-dom'
 
+export function InfoTip({ text, className = '', corner = false }: { text: string; className?: string; corner?: boolean }) {
+  return (
+    <span
+      className={`group ${corner ? 'absolute right-3 bottom-3' : 'relative'} inline-flex align-middle z-[5] ${className}`}
+    >
+      <span className="inline-flex w-[15px] h-[15px] rounded-full bg-slate-300 text-white text-[10px] leading-none items-center justify-center font-bold cursor-help select-none">
+        i
+      </span>
+      <span
+        className={`pointer-events-none absolute z-50 w-64 rounded-lg bg-slate-900 text-white text-[11px] leading-relaxed font-normal px-3 py-2 shadow-xl border border-white/10 opacity-0 translate-y-[-2px] group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-150 ${
+          corner ? 'right-0 bottom-full mb-1.5' : 'left-1/2 -translate-x-1/2 top-full mt-1.5'
+        }`}
+      >
+        {text}
+      </span>
+    </span>
+  )
+}
+
 export function StatCard({
   label,
   value,
@@ -7,6 +26,7 @@ export function StatCard({
   icon,
   tone = 'default',
   delta,
+  hint,
   to,
 }: {
   label: string
@@ -15,6 +35,7 @@ export function StatCard({
   icon?: React.ReactNode
   tone?: 'default' | 'danger' | 'warn' | 'ok'
   delta?: { text: string; dir: 'up' | 'down' | 'flat' }
+  hint?: string
   to?: string
 }) {
   const tones: Record<string, { text: string; chip: string }> = {
@@ -53,18 +74,24 @@ export function StatCard({
         title={`${label} 상세 보기`}
       >
         {inner}
+        {hint && <InfoTip text={hint} corner />}
         <div className="mt-2 text-[11px] text-brand-600 opacity-0 group-hover:opacity-100 transition-opacity">
           상세 보기 →
         </div>
       </Link>
     )
   }
-  return <div className={`${cls} hover:shadow-lift`}>{inner}</div>
+  return (
+    <div className={`${cls} hover:shadow-lift`}>
+      {inner}
+      {hint && <InfoTip text={hint} corner />}
+    </div>
+  )
 }
 
 export function ProgressBar({ value, className = '' }: { value: number; className?: string }) {
   const v = Math.max(0, Math.min(100, value))
-  const color = v >= 100 ? 'bg-emerald-500' : v >= 60 ? 'bg-brand-500' : v >= 30 ? 'bg-amber-500' : 'bg-red-400'
+  const color = v >= 100 ? 'bg-ink-900' : v >= 60 ? 'bg-slate-600' : v >= 30 ? 'bg-slate-500' : 'bg-slate-400'
   return (
     <div className={`h-1.5 rounded-full bg-slate-100 overflow-hidden ${className}`}>
       <div className={`h-full rounded-full ${color} transition-all duration-500`} style={{ width: `${v}%` }} />
@@ -114,10 +141,12 @@ export function PanelHeader({
   title,
   action,
   icon,
+  hint,
 }: {
   title: string
   action?: React.ReactNode
   icon?: React.ReactNode
+  hint?: string
 }) {
   return (
     <div className="flex items-center justify-between mb-4">
@@ -125,6 +154,7 @@ export function PanelHeader({
         {icon && <span className="text-ink-400">{icon}</span>}
         {title}
       </h3>
+      {hint && <InfoTip text={hint} corner />}
       {action}
     </div>
   )
