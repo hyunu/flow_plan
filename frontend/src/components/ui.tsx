@@ -13,7 +13,7 @@ export function InfoTip({ text, className = '', corner = false }: { text: string
         i
       </span>
       <span
-        className={`pointer-events-none absolute z-50 w-64 rounded-lg bg-slate-900 text-white text-[11px] leading-relaxed font-normal px-3 py-2 shadow-xl border border-white/10 opacity-0 translate-y-[-2px] group-hover/tip:opacity-100 group-hover/tip:translate-y-0 transition-all duration-150 ${
+        className={`pointer-events-none absolute z-50 w-64 rounded-lg bg-neutral-900 text-white text-[11px] leading-relaxed font-normal px-3 py-2 shadow-xl border border-white/10 opacity-0 translate-y-[-2px] group-hover/tip:opacity-100 group-hover/tip:translate-y-0 transition-all duration-150 ${
           corner ? 'right-0 bottom-full mb-1.5' : 'left-1/2 -translate-x-1/2 top-full mt-1.5'
         }`}
       >
@@ -130,10 +130,10 @@ export function StatusBadge({ status }: { status: string }) {
 }
 
 const priorityMap: Record<string, { label: string; tone: string }> = {
-  CRITICAL: { label: 'CRITICAL', tone: 'red' },
-  WARNING: { label: 'WARNING', tone: 'amber' },
-  ATTENTION: { label: 'ATTENTION', tone: 'blue' },
-  NORMAL: { label: 'NORMAL', tone: 'slate' },
+  CRITICAL: { label: '긴급', tone: 'red' },
+  WARNING: { label: '주의', tone: 'amber' },
+  ATTENTION: { label: '관심', tone: 'blue' },
+  NORMAL: { label: '정상', tone: 'slate' },
 }
 
 export function PriorityBadge({ priority }: { priority: string }) {

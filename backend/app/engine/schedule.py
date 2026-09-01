@@ -98,8 +98,9 @@ def _build_plan_curve(
     cal: WorkingCalendar,
     child_ids: set[int],
     today: date,
+    planned_finish: date | None = None,
 ) -> list[tuple[date, float]]:
-    """계획 S-Curve 전개: 최초 계획 시작일 하루 전 ~ max(최종 계획 종료일, 오늘)까지 일별 값.
+    """계획 S-Curve 전개: 최초 계획 시작일 하루 전 ~ max(최종 계획 종료일, 계획 완료일, 오늘)까지 일별 값.
     모든 태스크 계획이 시작되기 전이므로 첫 지점은 정확히 0%이고,
     마지막 계획 종료일에 100%에 수렴하며, 오늘 시점 값은 plan_progress와 정확히 일치한다."""
     leaves = [t for t in tasks if t.id not in child_ids]
@@ -108,7 +109,7 @@ def _build_plan_curve(
     if not starts or not ends:
         return []
     lo = min(starts) - timedelta(days=1)
-    hi = max(max(ends), today)
+    hi = max(max(ends), planned_finish or today, today)
     out: list[tuple[date, float]] = []
     d = lo
     guard = 0
@@ -119,67 +120,26 @@ def _build_plan_curve(
     return out
 
 
-def _task_forecast_pct(
-    t: EngineTaskInput,
-    cal: WorkingCalendar,
-    d: date,
-    today: date,
-    effective: float,
-    fs: date | None,
-    ff: date | None,
-) -> float:
-    """날짜 d의 예측 진척률 — 오늘까지는 현재 실적, 이후는 예측 CPM 구간에서 남은 작업량을 작업일로 소화."""
-    if t.status == "completed":
-        return 100.0
-    if d <= today:
-        return effective
-    if not ff:
-        return effective
-    earn_from = max(fs or today, today + timedelta(days=1))
-    if d < earn_from:
-        return effective
-    if d >= ff:
-        return 100.0
-    total = cal.count_workdays(earn_from, ff)
-    if total <= 0:
-        return 100.0
-    elapsed = cal.count_workdays(earn_from, d)
-    return round(min(100.0, effective + (100.0 - effective) * elapsed / total), 1)
-
-
 def _build_forecast_curve(
-    tasks: list[EngineTaskInput],
-    forecast_nodes: dict[int, TaskNode],
-    cal: WorkingCalendar,
-    child_ids: set[int],
+    plan_curve: list[tuple[date, float]],
     today: date,
+    delay_days: int,
     forecast_finish: date | None,
 ) -> list[tuple[date, float]]:
-    """오늘~프로젝트 예측 완료일의 일별 예측 진척.
-    각 잎 작업은 예측 ES 전까지 현재 실적을 유지하고, ES~EF에서 남은 %를 작업일에 배분한다."""
-    leaves = [t for t in tasks if t.id not in child_ids]
-    if not leaves or not forecast_finish:
+    """예측선 = 계획 곡선을 지연일만큼 오른쪽으로 평행이동한 곡선.
+    지연이 없으면 계획 곡선과 동일하고, 예측 완료일까지는 100%를 유지한다."""
+    if not plan_curve:
         return []
-    hi = max(forecast_finish, today)
+    if delay_days <= 0 or not forecast_finish:
+        return list(plan_curve)
     out: list[tuple[date, float]] = []
-    d = today
-    guard = 0
-    while d <= hi and guard < 4000:
-        acc = 0.0
-        wsum = 0.0
-        for t in leaves:
-            w = max(t.workload, 1.0)
-            wsum += w
-            fnode = forecast_nodes.get(t.id)
-            eff = 100.0 if t.status == "completed" else t.effective_progress
-            acc += _task_forecast_pct(
-                t, cal, d, today, eff,
-                fnode.earliest_start if fnode else t.plan_start,
-                fnode.earliest_finish if fnode else t.plan_end,
-            ) * w
-        out.append((d, round(acc / wsum, 1) if wsum else 0.0))
-        d += timedelta(days=1)
-        guard += 1
+    for d, pct in plan_curve:
+        fd = d + timedelta(days=delay_days)
+        if fd < today:
+            continue
+        out.append((fd, pct))
+    if out and out[-1][0] < forecast_finish:
+        out.append((forecast_finish, 100.0))
     return out
 
 
@@ -309,6 +269,9 @@ def run_schedule_engine(
     if planned_finish and forecast_finish:
         expected_delay = max(0, (forecast_finish - planned_finish).days)
 
+    plan_curve = _build_plan_curve(tasks, project_cal, child_ids, today, planned_finish)
+    forecast_curve = _build_forecast_curve(plan_curve, today, expected_delay, forecast_finish)
+
     return ScheduleResult(
         project_planned_finish=planned_finish,
         project_forecast_finish=forecast_finish,
@@ -324,8 +287,6 @@ def run_schedule_engine(
                 key=lambda t: (t.early_start or date.max, t.early_finish or date.max, t.task_id),
             )
         ],
-        plan_curve=_build_plan_curve(tasks, project_cal, child_ids, today),
-        forecast_curve=_build_forecast_curve(
-            tasks, forecast_nodes, project_cal, child_ids, today, forecast_finish
-        ),
+        plan_curve=plan_curve,
+        forecast_curve=forecast_curve,
     )

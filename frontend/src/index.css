@@ -98,6 +98,10 @@
   height: 10px;
   width: 10px;
 }
+/* 사이드바 선택 메뉴 아이콘을 밝게 (현재 페이지 강조) */
+a[aria-current='page'] svg {
+  color: rgb(255 255 255);
+}
 ::-webkit-scrollbar-thumb {
   @apply bg-slate-300/80 rounded-full;
   border: 2px solid transparent;

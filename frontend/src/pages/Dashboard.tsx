@@ -11,6 +11,7 @@ import {
   IconLink,
   IconList,
   IconProjects,
+  IconSparkles,
   IconUser,
 } from '../components/icons'
 import { ProgressChart } from '../components/ProgressChart'
@@ -231,8 +232,10 @@ export function Dashboard() {
       {data.ai_summary ? (
         <Link to={`/projects/${projectId}/schedule`} className="card p-6 bg-gradient-to-br from-surface-100/60 to-card block hover:shadow-lift transition-shadow group">
           <div className="flex items-center gap-2 mb-3">
-            <span className="w-7 h-7 rounded-lg bg-brand-600 text-white grid place-items-center text-sm">✨</span>
-            <h3 className="text-sm font-semibold text-ink-900">AI 현황 요약</h3>
+            <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500 text-white grid place-items-center shadow-sm">
+              <IconSparkles size={15} />
+            </span>
+            <h3 className="text-sm font-semibold text-ink-900">프로젝트 현황 요약</h3>
             <InfoTip
               corner
               text="프로젝트 데이터(진척·지연·이슈·Critical Path)를 바탕으로 AI가 생성한 현황 요약입니다. 지연 원인, 리스크 항목, 권장 대처 순서를 파악하는 데 활용하세요. 결과는 프로젝트별로 저장·재생성됩니다."
@@ -246,8 +249,10 @@ export function Dashboard() {
       ) : (
         <div className="card p-6 bg-gradient-to-br from-surface-100/40 to-card">
           <div className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-lg bg-brand-600/20 text-brand-600 grid place-items-center text-sm animate-pulse">✨</span>
-            <h3 className="text-sm font-semibold text-ink-900">AI 현황 요약</h3>
+            <span className="w-7 h-7 rounded-lg bg-brand-500/15 text-brand-600 grid place-items-center animate-pulse">
+              <IconSparkles size={15} />
+            </span>
+            <h3 className="text-sm font-semibold text-ink-900">프로젝트 현황 요약</h3>
             <InfoTip
               corner
               text="프로젝트 데이터를 바탕으로 AI가 생성하는 현황 요약입니다. 지연 원인·리스크·권장 대처를 제공합니다. 최초 1회 생성 후 새로고침 시 표시됩니다."

@@ -81,7 +81,8 @@ def _aggregate_parents(tasks: list[Task]) -> None:
             parent.plan_start = min(plan_starts)
         if plan_ends:
             parent.plan_end = max(plan_ends)
-        parent.workload = sum(c.workload for c in children)
+        # 부모 workload는 시드의 원래 값을 유지한다. 자식 합(병렬 모듈을 순차로 취급)으로 덮어쓰면
+        # 예측 일정(forecast)이 비현실적으로 늘어난다.
 
 
 def compute_project_schedule(db: Session, project: Project, today: date | None = None) -> ScheduleResult:

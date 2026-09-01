@@ -88,6 +88,13 @@ export const IconAlert = (p: IconProps) => (
   </Svg>
 )
 
+export const IconSparkles = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3Z" />
+    <path d="M19 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1Z" />
+  </Svg>
+)
+
 export const IconSun = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="12" cy="12" r="4" />

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { http } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -17,7 +18,7 @@ import {
 
 const nav = [
   { to: '/projects', label: '프로젝트', icon: IconProjects },
-  { to: '/challenges', label: 'Daily Challenge', icon: IconChallenge },
+  { to: '/challenges', label: '오늘의 챌린지', icon: IconChallenge },
   { to: '/reports', label: '리포트', icon: IconReport },
   { to: '/manual', label: '설명서', icon: IconManual },
 ]
@@ -48,6 +49,15 @@ export function Layout() {
       return !v
     })
 
+  // 사이드바 툴팁: body 최상단(Portal)에 렌더해 다른 컨트롤에 가리지 않음
+  const [tip, setTip] = useState<{ label: string; x: number; y: number } | null>(null)
+  const showTip = (e: React.MouseEvent | React.FocusEvent, label: string) => {
+    if (!collapsed) return
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setTip({ label, x: r.right + 10, y: r.top + r.height / 2 })
+  }
+  const hideTip = () => setTip(null)
+
   useEffect(() => {
     http
       .get<Notification[]>('/notifications')
@@ -61,14 +71,15 @@ export function Layout() {
 const navLinkCls = ({ isActive }: { isActive: boolean }) =>
   `group relative flex items-center rounded-xl text-sm font-medium transition-all ${
     collapsed ? 'justify-center w-11 h-11 mx-auto' : 'gap-3 px-3 py-2.5'
-  } ${isActive ? 'bg-white/10 text-white shadow-inner' : 'hover:bg-white/5 hover:text-white/80'}`
-
-const SidebarTip = ({ label }: { label: string }) =>
-  collapsed ? (
-    <span className="pointer-events-none absolute left-full ml-2.5 top-1/2 -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 border border-white/10 text-white text-xs font-medium px-2.5 py-1.5 shadow-xl z-50 opacity-0 translate-x-[-4px] group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150">
-      {label}
-    </span>
-  ) : null
+  } ${
+    isActive
+      ? 'bg-white/20 text-white shadow-inner ring-1 ring-white/15'
+      : 'hover:bg-white/5 hover:text-white/80'
+  } ${
+    isActive && !collapsed
+      ? "after:content-[''] after:absolute after:left-0 after:top-1/2 after:-translate-y-1/2 after:w-[3px] after:h-5 after:rounded-full after:bg-white after:shadow-[0_0_8px_rgba(255,255,255,0.6)]"
+      : ''
+  }`
 
   const sectionTitle = (text: string) =>
     collapsed ? (
@@ -81,60 +92,64 @@ const SidebarTip = ({ label }: { label: string }) =>
     <div className="min-h-screen flex">
       {/* Sidebar */}
       <aside
-        className={`bg-slate-900 text-white/45 flex flex-col shrink-0 sticky top-0 h-screen transition-all duration-200 ${
-          collapsed ? 'w-[68px]' : 'w-64'
+        className={`relative bg-black text-white/45 flex flex-col shrink-0 sticky top-0 h-screen transition-all duration-200 ${
+          collapsed ? 'w-[68px]' : 'w-44'
         }`}
       >
-        {/* 헤더: 로고 + 접기 버튼 */}
+        {/* 헤더: 로고 */}
         <div className={`h-16 flex items-center border-b border-white/5 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-4'}`}>
-          {collapsed ? (
-            <button
-              onClick={toggleCollapse}
-              aria-label="사이드바 펼치기"
-              className="group relative w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500 grid place-items-center text-white font-bold text-sm shadow-lg shadow-brand-900/30"
-            >
-              F
-              <SidebarTip label="사이드바 펼치기" />
-            </button>
-          ) : (
-            <>
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500 grid place-items-center text-white font-bold text-sm shadow-lg shadow-brand-900/30 shrink-0">
-                F
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-white font-semibold text-[15px] leading-tight">Flow Plan</div>
-                <div className="text-[11px] text-slate-500 leading-tight truncate">프로젝트 리스크 관리</div>
-              </div>
-              <button
-                onClick={toggleCollapse}
-                aria-label="사이드바 접기"
-                className="group relative shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-white/45 hover:text-white hover:bg-white/10 transition-colors"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="m15 18-6-6 6-6" />
-                </svg>
-                <SidebarTip label="사이드바 접기" />
-              </button>
-            </>
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500 grid place-items-center text-white font-bold text-sm shadow-lg shadow-brand-900/30 shrink-0">
+            F
+          </div>
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <div className="text-white font-semibold text-[15px] leading-tight">Flow Plan</div>
+              <div className="text-[11px] text-slate-500 leading-tight truncate">프로젝트 리스크 관리</div>
+            </div>
           )}
         </div>
+
+        {/* 경계선 수직 중앙의 원형 접기/펼치기 버튼 */}
+        <button
+          onClick={toggleCollapse}
+          aria-label={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
+          title={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
+          className="absolute top-1/2 -translate-y-1/2 -right-3 z-20 w-6 h-6 rounded-full bg-card border border-slate-300 dark:border-slate-600 shadow-md grid place-items-center text-slate-500 hover:text-ink-900 hover:border-brand-400 transition-colors"
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d={collapsed ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'} />
+          </svg>
+        </button>
 
         <nav className={`flex-1 py-4 space-y-1 ${collapsed ? 'px-1.5' : 'px-3'}`}>
           {sectionTitle('메뉴')}
           {nav.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={navLinkCls}>
-              <Icon size={18} className={`shrink-0 text-white/40 group-hover:text-white/80 ${collapsed ? '' : ''}`} />
+            <NavLink
+              key={to}
+              to={to}
+              className={navLinkCls}
+              onMouseEnter={(e) => showTip(e, label)}
+              onMouseLeave={hideTip}
+              onFocus={(e) => showTip(e, label)}
+              onBlur={hideTip}
+            >
+              <Icon size={18} className="shrink-0 text-white/40 group-hover:text-white/80" />
               {!collapsed && label}
-              <SidebarTip label={label} />
             </NavLink>
           ))}
           {user?.role_name === 'System Administrator' && (
             <>
               {sectionTitle('시스템')}
-              <NavLink to="/settings" className={navLinkCls}>
+              <NavLink
+                to="/settings"
+                className={navLinkCls}
+                onMouseEnter={(e) => showTip(e, '관리자 설정')}
+                onMouseLeave={hideTip}
+                onFocus={(e) => showTip(e, '관리자 설정')}
+                onBlur={hideTip}
+              >
                 <IconSettings size={18} className="shrink-0 text-white/40 group-hover:text-white/80" />
                 {!collapsed && '관리자 설정'}
-                <SidebarTip label="관리자 설정" />
               </NavLink>
             </>
           )}
@@ -157,13 +172,16 @@ const SidebarTip = ({ label }: { label: string }) =>
           </div>
           <button
             onClick={() => setConfirmLogout(true)}
+            onMouseEnter={(e) => showTip(e, '로그아웃')}
+            onMouseLeave={hideTip}
+            onFocus={(e) => showTip(e, '로그아웃')}
+            onBlur={hideTip}
             className={`group relative flex items-center rounded-lg text-[13px] text-white/45 hover:text-white hover:bg-white/5 w-full transition-colors ${
               collapsed ? 'justify-center w-11 h-10 mx-auto' : 'gap-2.5 px-3 py-2'
             }`}
           >
             <IconLogout size={15} className="shrink-0" />
             {!collapsed && '로그아웃'}
-            <SidebarTip label="로그아웃" />
           </button>
         </div>
       </aside>
@@ -250,6 +268,22 @@ const SidebarTip = ({ label }: { label: string }) =>
           <Outlet />
         </main>
       </div>
+
+      {/* 사이드바 툴팁 — body 최상단 Portal */}
+      {tip &&
+        createPortal(
+          <div
+            className="fixed z-[9999] pointer-events-none -translate-y-1/2 flex items-center"
+            style={{ left: tip.x, top: tip.y }}
+            role="tooltip"
+          >
+            <span className="w-0 h-0 border-y-[5px] border-y-transparent border-r-[6px] border-r-neutral-900 dark:border-r-neutral-800" />
+            <span className="whitespace-nowrap rounded-md bg-neutral-900 dark:bg-neutral-800 text-white text-xs font-medium px-2.5 py-1.5 shadow-lg ring-1 ring-black/10">
+              {tip.label}
+            </span>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

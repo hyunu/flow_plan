@@ -1,5 +1,5 @@
 import threading
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -59,6 +59,14 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
     )
 
     milestones = db.query(Milestone).filter_by(project_id=project.id).order_by(Milestone.sort_order).all()
+    # 완료일은 "마지막 마일스톤(오픈)" 기준으로 통일 — 예상 완료일 = 오픈 + 예상 지연일.
+    open_ms = next((m for m in reversed(milestones) if m.end_date), None)
+    if open_ms:
+        display_planned_finish = open_ms.end_date
+        display_forecast_finish = display_planned_finish + timedelta(days=result.expected_delay_days)
+    else:
+        display_planned_finish = result.project_planned_finish
+        display_forecast_finish = result.project_forecast_finish
     delayed = [t for t in result.tasks if t.delay_days > 0]
     critical = sorted(
         [t for t in result.tasks if t.is_critical],
@@ -100,8 +108,8 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
         "overall_progress": result.actual_progress,
         "plan_progress": result.plan_progress,
         "progress_gap": result.progress_gap,
-        "planned_finish": result.project_planned_finish,
-        "forecast_finish": result.project_forecast_finish,
+        "planned_finish": display_planned_finish,
+        "forecast_finish": display_forecast_finish,
         "expected_delay_days": result.expected_delay_days,
         "risk_level": "WARNING" if result.expected_delay_days > 0 else "NORMAL",
         "plan_curve": [{"date": d.isoformat(), "pct": pct} for d, pct in result.plan_curve],

@@ -586,7 +586,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
 
       {hoverTask && (
         <div
-          className="fixed z-[80] pointer-events-none w-max max-w-[18rem] rounded-lg bg-slate-900 text-white text-[14px] leading-snug px-3 py-2.5 shadow-xl border border-white/10"
+          className="fixed z-[80] pointer-events-none w-max max-w-[18rem] rounded-lg bg-neutral-900 text-white text-[14px] leading-snug px-3 py-2.5 shadow-xl border border-white/10"
           style={{ left: tipPos.x + 14, top: tipPos.y + 14 }}
         >
           <div className="font-semibold text-[15px] truncate">{hoverTask.title}</div>

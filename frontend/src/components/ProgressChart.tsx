@@ -258,7 +258,7 @@ export function ProgressChart({
       .map((s) => ({ ts: t(s.date), actual: s.actual }))
       .filter((s): s is { ts: number; actual: number } => s.ts != null)
       .sort((a, b) => a.ts - b.ts)
-    if (snaps.length > 0) {
+    if (snaps.length > 0 && snaps[0].ts < todayTs) {
       let k = 0
       let last = 0
       const firstTs = snaps[0].ts
@@ -409,6 +409,20 @@ export function ProgressChart({
       msConnector = linearPath(seg)
     }
 
+    // 예측 마일스톤: 예상 지연만큼 날짜만 밀고, 진척률(동일 Y)은 계획 마일스톤과 동일하게 유지
+    const delayMs = expectedDelayDays != null && expectedDelayDays > 0 ? expectedDelayDays * DAY : 0
+    const fmsPts = delayMs > 0 && foreCum
+      ? milestones
+          .map((m) => ({ m, ts: t(m.end_date) }))
+          .filter((x): x is { m: (typeof milestones)[number]; ts: number } => x.ts != null && x.ts + delayMs >= min && x.ts + delayMs <= max)
+          .map(({ m, ts }) => ({
+            x: sx(ts + delayMs),
+            y: totalWork > 0 ? sy(Math.min(Math.max((planCum[toIdx(ts)] / totalWork) * 100, 4), 100)) : 4,
+            name: m.name,
+            ts: ts + delayMs,
+          }))
+      : []
+
     const lastFull = (arr: number[] | null) => {
       if (!arr || totalWork <= 0) return undefined
       let hit: number | undefined
@@ -436,17 +450,17 @@ export function ProgressChart({
 
     return {
       min, max, todayTs, totalWork, planCum, baseCum, actualCum, foreCum,
-      planToday, actToday, delayRegion, msPts, msConnector, snapPts,
+      planToday, actToday, delayRegion, msPts, msConnector, snapPts, fmsPts,
       pts: {
         baseline: toPts(baseCum, 0.5, baseDrawEnd, firstRise(baseCum)),
         plan: toPts(planCum, 0, planDrawEnd, firstRise(planCum)),
-        actual: toPts(actualCum, 0, todayTs, snaps[0]?.ts ?? firstRise(actualCum)),
+        actual: toPts(actualCum, 0, todayTs, snaps.length > 0 && snaps[0].ts < todayTs ? snaps[0].ts : firstRise(actualCum)),
         forecast: toPts(foreCum, 0, foreDrawEnd, todayTs),
       },
     }
-  }, [tasks, plannedFinish, forecastFinish, planEnd, milestones, planCurve, forecastCurve, progressSnapshots, actualProgress, domain, effMin, effMax, globalRange])
+  }, [tasks, plannedFinish, forecastFinish, planEnd, milestones, planCurve, forecastCurve, progressSnapshots, actualProgress, expectedDelayDays, domain, effMin, effMax, globalRange])
 
-  const { min, max, todayTs, actToday, delayRegion, msPts, msConnector, snapPts } = viz
+  const { min, max, todayTs, actToday, delayRegion, msPts, msConnector, snapPts, fmsPts } = viz
   const plotW = W - PAD.l - PAD.r
   const plotH = H - PAD.t - PAD.b
   const sy = (p: number) => H - PAD.b - (p / 100) * plotH
@@ -457,11 +471,11 @@ export function ProgressChart({
   const todayNearLeft = todayInView && todayX < PAD.l + plotW * 0.22
   const actLbl = {
     x: todayNearLeft ? todayX + 10 : todayX - 10,
-    anchor: (todayNearLeft ? 'start' : 'end') as const,
+    anchor: (todayNearLeft ? 'start' : 'end') as 'start' | 'end',
   }
   const planLbl = {
     x: todayNearRight ? todayX - 10 : todayX + 10,
-    anchor: (todayNearRight ? 'end' : 'start') as const,
+    anchor: (todayNearRight ? 'end' : 'start') as 'start' | 'end',
   }
 
   // 드래그: 전체 뷰는 구간 확대, 확대 뷰는 좌우 이동
@@ -573,7 +587,7 @@ export function ProgressChart({
     return merged.map((ts, i, arr) => ({
       x: PAD.l + ((ts - min) / (max - min)) * plotW,
       label: fmt(ts),
-      anchor: (i === 0 ? 'start' : i === arr.length - 1 ? 'end' : 'middle') as const,
+      anchor: (i === 0 ? 'start' : i === arr.length - 1 ? 'end' : 'middle') as 'start' | 'end' | 'middle',
     }))
   }, [min, max, plotW, plannedFinish, forecastFinish])
 
@@ -711,6 +725,7 @@ export function ProgressChart({
           <path d={msConnector} stroke={cv('ink-900')} strokeWidth={1.1} strokeDasharray="3,3" opacity={0.55} fill="none" />
         )}
         {msPts.map((m, i) => {
+          const executed = m.ts <= todayTs
           const nearToday = Math.abs(m.x - todayX) < 52
           const below = m.y <= 28 || nearToday
           const anchor = nearToday ? (m.x <= todayX ? 'end' : 'start') : 'middle'
@@ -718,8 +733,41 @@ export function ProgressChart({
           const ty = below ? m.y + 16 : m.y - 11
           return (
             <g key={i}>
-              <circle cx={m.x} cy={m.y} r={5.5} fill={cv('card')} stroke={cv('chart-mark')} strokeWidth={1.9} />
-              <text x={tx} y={ty} fontSize={8.5} fontWeight={700} fill={cv('ink-900')} textAnchor={anchor}>
+              <circle
+                cx={m.x}
+                cy={m.y}
+                r={5.5}
+                fill={executed ? cv('ink-900') : cv('card')}
+                stroke={executed ? cv('ink-900') : cv('slate-500')}
+                strokeWidth={1.9}
+              />
+              <text x={tx} y={ty} fontSize={8.5} fontWeight={700} fill={executed ? cv('ink-900') : cv('slate-600')} textAnchor={anchor}>
+                {(m.name || '').slice(0, 8)}
+              </text>
+            </g>
+          )
+        })}
+        {/* 예측 마일스톤: 연한 핑크 테두리 (계획과 동일 스타일·크기, 컬러만 다름) */}
+        {fmsPts.length > 1 && (
+          <path
+            d={fmsPts.map((m, i) => `${i === 0 ? 'M' : 'L'} ${m.x} ${m.y}`).join(' ')}
+            stroke="#f472b6"
+            strokeWidth={1.1}
+            strokeDasharray="3,3"
+            opacity={0.6}
+            fill="none"
+          />
+        )}
+        {fmsPts.map((m, i) => {
+          const nearToday = Math.abs(m.x - todayX) < 52
+          const below = m.y <= 28 || nearToday
+          const anchor = nearToday ? (m.x <= todayX ? 'end' : 'start') : 'middle'
+          const tx = nearToday ? (m.x <= todayX ? m.x - 8 : m.x + 8) : m.x
+          const ty = below ? m.y + 16 : m.y - 11
+          return (
+            <g key={`f${i}`}>
+              <circle cx={m.x} cy={m.y} r={5.5} fill={cv('card')} stroke="#f472b6" strokeWidth={1.9} />
+              <text x={tx} y={ty} fontSize={8.5} fontWeight={700} fill="#f472b6" textAnchor={anchor}>
                 {(m.name || '').slice(0, 8)}
               </text>
             </g>
@@ -820,6 +868,9 @@ export function ProgressChart({
         )}
         {msPts.length > 0 && (
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full inline-block bg-card" style={{ border: '1.8px solid rgb(var(--chart-mark))' }} /> 마일스톤</span>
+        )}
+        {fmsPts.length > 0 && (
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full inline-block bg-card" style={{ border: '1.8px solid #f472b6' }} /> 예측 마일스톤</span>
         )}
         {delayRegion && (
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-slate-400/30 ring-1 ring-slate-400 inline-block" /> 지연 구간</span>

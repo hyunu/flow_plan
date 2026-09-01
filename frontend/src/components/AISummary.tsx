@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { Badge } from './ui'
 
 interface RiskItem {
@@ -62,11 +63,24 @@ export function AISummary({ content }: { content: string }) {
             {data!.risks!.map((r, i) => (
               <li key={i} className="flex items-start gap-2">
                 <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="text-[13px] text-ink-700 leading-snug">
+                    {r.type && (
+                      <Badge tone={typeTone[r.type] || 'slate'}>{typeLabel[r.type] || r.type}</Badge>
+                    )}
                     {r.task_title ? (
                       <>
-                        <span className="font-medium">{r.task_title}</span>
+                        {' '}
+                        {r.task_id != null ? (
+                          <Link
+                            to={`/tasks/${r.task_id}`}
+                            className="font-medium text-ink-900 hover:text-brand-600 hover:underline underline-offset-2"
+                          >
+                            {r.task_title}
+                          </Link>
+                        ) : (
+                          <span className="font-medium">{r.task_title}</span>
+                        )}
                         {r.task_id != null && <span className="text-slate-400 text-[11px]"> #{r.task_id}</span>}
                         {r.risk || r.description ? ` — ${r.risk || r.description}` : ''}
                       </>
@@ -74,9 +88,6 @@ export function AISummary({ content }: { content: string }) {
                       r.risk || r.description || ''
                     )}
                   </div>
-                  {r.type && (
-                    <Badge tone={typeTone[r.type] || 'slate'}>{typeLabel[r.type] || r.type}</Badge>
-                  )}
                 </div>
               </li>
             ))}
