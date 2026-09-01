@@ -650,12 +650,12 @@ export function ProgressChart({
             {g.p !== 0 && (
               <line x1={PAD.l} y1={g.y} x2={W - PAD.r} y2={g.y} stroke={cv('slate-400')} strokeWidth={1} opacity={0.28} />
             )}
-            <text x={PAD.l - 8} y={g.y + 3.5} fontSize={10} fontWeight={600} fill={cv('ink-700')} textAnchor="end">{g.p}%</text>
+            <text x={PAD.l - 8} y={g.y + 3.5} fontSize={11.5} fontWeight={600} fill={cv('ink-700')} textAnchor="end">{g.p}%</text>
           </g>
         ))}
         {/* X축 라벨 */}
         {xLabels.map((l, i) => (
-          <text key={i} x={l.x} y={H - PAD.b + 16} fontSize={10} fontWeight={600} fill={cv('ink-700')} textAnchor={l.anchor}>{l.label}</text>
+          <text key={i} x={l.x} y={H - PAD.b + 16} fontSize={11.5} fontWeight={600} fill={cv('ink-700')} textAnchor={l.anchor}>{l.label}</text>
         ))}
 
         <g clipPath="url(#pg-zoom)">
@@ -698,12 +698,12 @@ export function ProgressChart({
         {delayRegion && (
           <g>
             {plannedFinish && (
-              <text x={delayRegion.x0 + 4} y={sy(0) - 6} fontSize={9} fontWeight={700} fill={cv('slate-600')} textAnchor="start">
+              <text x={delayRegion.x0 + 4} y={sy(0) - 6} fontSize={10.5} fontWeight={700} fill={cv('slate-600')} textAnchor="start">
                 {`계획 ${plannedFinish.slice(5)}`}
               </text>
             )}
             {forecastFinish && (
-              <text x={delayRegion.x1 - 4} y={sy(0) - 6} fontSize={9} fontWeight={700} fill={cv('slate-600')} textAnchor="end">
+              <text x={delayRegion.x1 - 4} y={sy(0) - 6} fontSize={10.5} fontWeight={700} fill={cv('slate-600')} textAnchor="end">
                 {`예측 ${forecastFinish.slice(5)}`}
               </text>
             )}
@@ -741,7 +741,7 @@ export function ProgressChart({
                 stroke={executed ? cv('ink-900') : cv('slate-500')}
                 strokeWidth={1.9}
               />
-              <text x={tx} y={ty} fontSize={8.5} fontWeight={700} fill={executed ? cv('ink-900') : cv('slate-600')} textAnchor={anchor}>
+              <text x={tx} y={ty} fontSize={10.5} fontWeight={700} fill={executed ? cv('ink-900') : cv('slate-600')} textAnchor={anchor}>
                 {(m.name || '').slice(0, 8)}
               </text>
             </g>
@@ -767,7 +767,7 @@ export function ProgressChart({
           return (
             <g key={`f${i}`}>
               <circle cx={m.x} cy={m.y} r={5.5} fill={cv('card')} stroke="#f472b6" strokeWidth={1.9} />
-              <text x={tx} y={ty} fontSize={8.5} fontWeight={700} fill="#f472b6" textAnchor={anchor}>
+              <text x={tx} y={ty} fontSize={10.5} fontWeight={700} fill="#f472b6" textAnchor={anchor}>
                 {(m.name || '').slice(0, 8)}
               </text>
             </g>
@@ -781,7 +781,7 @@ export function ProgressChart({
             <text
               x={todayX}
               y={PAD.t + 11}
-              fontSize={9}
+              fontSize={11}
               fontWeight={700}
               fill={cv('ink-700')}
               textAnchor={todayNearRight ? 'end' : todayNearLeft ? 'start' : 'middle'}
@@ -790,16 +790,16 @@ export function ProgressChart({
             </text>
             <circle cx={todayX} cy={sy(planProgress)} r={5} fill={cv('slate-600')} stroke={cv('card')} strokeWidth={2} />
             <circle cx={todayX} cy={sy(actToday)} r={6} fill={cv('ink-900')} stroke={cv('card')} strokeWidth={2.2} />
-            <text x={actLbl.x} y={sy(actToday) - 9} fontSize={10} fontWeight={700} fill={cv('ink-900')} textAnchor={actLbl.anchor}>
+            <text x={actLbl.x} y={sy(actToday) - 9} fontSize={11.5} fontWeight={700} fill={cv('ink-900')} textAnchor={actLbl.anchor}>
               {actualProgress.toFixed(1)}%
             </text>
-            <text x={actLbl.x} y={sy(actToday) - 21} fontSize={9.5} fontWeight={600} fill={cv('ink-700')} textAnchor={actLbl.anchor}>
+            <text x={actLbl.x} y={sy(actToday) - 21} fontSize={10.5} fontWeight={600} fill={cv('ink-700')} textAnchor={actLbl.anchor}>
               실제
             </text>
-            <text x={planLbl.x} y={sy(planProgress) - 9} fontSize={9.5} fontWeight={700} fill={cv('ink-700')} textAnchor={planLbl.anchor}>
+            <text x={planLbl.x} y={sy(planProgress) - 9} fontSize={11} fontWeight={700} fill={cv('ink-700')} textAnchor={planLbl.anchor}>
               {planProgress.toFixed(1)}%
             </text>
-            <text x={planLbl.x} y={sy(planProgress) - 21} fontSize={9.5} fontWeight={600} fill={cv('ink-700')} textAnchor={planLbl.anchor}>
+            <text x={planLbl.x} y={sy(planProgress) - 21} fontSize={10.5} fontWeight={600} fill={cv('ink-700')} textAnchor={planLbl.anchor}>
               계획
             </text>
           </g>
@@ -809,7 +809,7 @@ export function ProgressChart({
           const fp = viz.pts.forecast.find((p) => p.x > todayX + 28)
           if (!fp) return null
           return (
-            <text x={fp.x} y={fp.y - 8} fontSize={9} fontWeight={600} fill={cv('slate-500')} textAnchor="start">
+            <text x={fp.x} y={fp.y - 8} fontSize={10.5} fontWeight={600} fill={cv('slate-500')} textAnchor="start">
               예측
             </text>
           )
