@@ -276,7 +276,8 @@ def analyze_project_risk(db: Session, project: Project) -> AIAnalysis:
         f"JSON만 반환하세요(마크다운 코드블록 없이, key/value만):\n"
         f"- overall_risk: HIGH/WARNING/NORMAL 중 하나\n"
         f"- risks: [{{'task_id': 번호, 'task_title': '제목', 'risk': '설명', 'type': 'system_calc|user_opinion|ai_prediction'}}]\n"
-        f"- recommendations: ['대책 목록']\n\n{facts}"
+        f"- recommendations: [{{'task_id': 번호, 'task_title': '제목', 'action': '대책'}}] "
+        f"(프로젝트 전반 대책은 task_id 생략 가능)\n\n{facts}"
     )
     content = provider.generate(prompt, system="프로젝트 위험 분석 AI. 결정적 계산 결과를 근거로 하고, 추측은 ai_prediction으로 표시.", max_tokens=1200)
     analysis = AIAnalysis(

@@ -230,7 +230,7 @@ export function Dashboard() {
 
       {/* AI 요약 */}
       {data.ai_summary ? (
-        <Link to={`/projects/${projectId}/schedule`} className="card p-6 bg-gradient-to-br from-surface-100/60 to-card block hover:shadow-lift transition-shadow group">
+        <div className="card p-6 bg-gradient-to-br from-surface-100/60 to-card">
           <div className="flex items-center gap-2 mb-3">
             <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500 text-white grid place-items-center shadow-sm">
               <IconSparkles size={15} />
@@ -238,14 +238,17 @@ export function Dashboard() {
             <h3 className="text-sm font-semibold text-ink-900">프로젝트 현황 요약</h3>
             <InfoTip
               corner
-              text="프로젝트 데이터(진척·지연·이슈·Critical Path)를 바탕으로 AI가 생성한 현황 요약입니다. 지연 원인, 리스크 항목, 권장 대처 순서를 파악하는 데 활용하세요. 결과는 프로젝트별로 저장·재생성됩니다."
+              text="프로젝트 데이터(진척·지연·이슈·Critical Path)를 바탕으로 AI가 생성한 현황 요약입니다. 지연 원인, 리스크 항목, 권장 대처 순서를 파악하는 데 활용하세요. 태스크 이름을 누르면 상세로 이동합니다. 결과는 프로젝트별로 저장·재생성됩니다."
             />
-            <span className="ml-auto text-[11px] text-brand-600 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Link
+              to={`/projects/${projectId}/schedule`}
+              className="ml-auto text-[11px] text-brand-600 hover:underline"
+            >
               전체 일정 보기 →
-            </span>
+            </Link>
           </div>
-          <AISummary content={data.ai_summary} />
-        </Link>
+          <AISummary content={data.ai_summary} tasks={tasks} />
+        </div>
       ) : (
         <div className="card p-6 bg-gradient-to-br from-surface-100/40 to-card">
           <div className="flex items-center gap-2">
