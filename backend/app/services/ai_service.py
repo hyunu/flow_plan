@@ -92,18 +92,30 @@ def _task_status_for_user(result: ScheduleResult, task_id: int) -> TaskResult | 
 
 
 def generate_user_challenges(db: Session, user: User, today: date | None = None) -> list[Challenge]:
-    """결정적 규칙으로 사용자별 Challenge 생성(§20/§21). AI는 문구를 다듬는다."""
+    """결정적 규칙으로 사용자별 Challenge 생성(§20/§21). AI는 문구를 다듬는다.
+    담당 태스크가 없는 계정(예: 시스템 관리자)은 접근 가능한 전체 프로젝트의 리스크 항목을 대상으로 삼는다."""
     today = today or date.today()
     provider: AIProvider = get_ai_provider()
     memberships = user.memberships
     created: list[Challenge] = []
 
-    for membership in memberships:
-        project = membership.project
-        if project.is_deleted:
-            continue
+    if memberships:
+        projects: list[tuple[Project, bool]] = [
+            (m.project, True) for m in memberships if not m.project.is_deleted
+        ]
+    else:
+        # 멤버십 없는 관리자 등: 전체 프로젝트 전반의 리스크를 챌린지로
+        projects = [
+            (p, False)
+            for p in db.query(Project).filter(Project.is_deleted.is_(False)).all()
+        ]
+
+    for project, only_my in projects:
         result = compute_project_schedule(db, project, today)
-        my_tasks = [t for t in result.tasks if _task_owned_by(db, t.task_id, user.id)]
+        if only_my:
+            my_tasks = [t for t in result.tasks if _task_owned_by(db, t.task_id, user.id)]
+        else:
+            my_tasks = result.tasks
         if not my_tasks:
             continue
 
@@ -120,7 +132,11 @@ def generate_user_challenges(db: Session, user: User, today: date | None = None)
                 f"카테고리: {category}, 우선순위: {priority}\n"
                 f"규칙 근거: {rule}\n\n{facts}\n\nChallenge 메시지:"
             )
-            message = provider.generate(prompt, system="당신은 프로젝트 일정 관리 챗봇입니다. 사실과 의견과 예측을 구분해 명확하게 전달하세요.", max_tokens=200).strip()
+            try:
+                message = provider.generate(prompt, system="당신은 프로젝트 일정 관리 챗봇입니다. 사실과 의견과 예측을 구분해 명확하게 전달하세요.", max_tokens=200).strip()
+            except Exception:
+                # AI 호출 실패(쿼터/네트워크 등) 시에도 규칙 기반 메시지로 생성되도록 폴백
+                message = ''
             if not message:
                 message = rule
             ch = Challenge(

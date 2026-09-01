@@ -63,12 +63,12 @@ export function Challenges() {
             <IconChallenge size={19} />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-ink-900">Daily Challenge</h1>
+            <h1 className="text-xl font-bold text-ink-900">오늘의 챌린지</h1>
             <p className="text-[13px] text-slate-400 mt-0.5">오늘 당신이 해야 할 일 ({open.length}개 남음)</p>
           </div>
         </div>
         <button className="btn-primary" onClick={generate}>
-          + Challenge 생성
+          + 챌린지 생성
         </button>
       </div>
 
@@ -88,7 +88,7 @@ export function Challenges() {
       ) : sorted.length === 0 ? (
         <div className="card p-14 text-center text-sm text-slate-400">
           <div className="text-3xl mb-3">🎯</div>
-          생성된 Challenge가 없습니다. 생성 버튼을 눌러보세요.
+          생성된 챌린지가 없습니다. 생성 버튼을 눌러보세요.
         </div>
       ) : (
         <div className="space-y-3">
