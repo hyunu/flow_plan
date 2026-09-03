@@ -23,6 +23,7 @@ from app.models.entities import (
     Group,
     Milestone,
     Notification,
+    ProgressSnapshot,
     ProgressUpdate,
     Project,
     ProjectCalendar,
@@ -145,6 +146,7 @@ class P:
         self.deps: list[tuple[int, int, int]] = []
         self.milestones: list[Milestone] = []
         self.last_task: int | None = None
+        self.intended: dict[int, tuple[str, float]] = {}
 
     def group(self, name: str, sort: int) -> Group:
         g = Group(project_id=self.project.id, name=name, sort_order=sort)
@@ -169,14 +171,25 @@ class P:
              task_type: str = "normal", is_issue: bool = False, issue: dict | None = None,
              hours: float | None = None) -> int:
         u = self.users(assignee)
+        if status == "done":
+            st = "completed"
+        elif status == "delayed":
+            st = "delayed"
+        elif status == "doing":
+            st = "in_progress"
+        else:
+            st = "not_started"
         t = Task(
             project_id=self.project.id, group_id=self.groups[g].id, parent_id=parent,
             title=title, plan_start=self.d(start), plan_end=self.d(end), workload=work,
             task_type=task_type, is_issue=is_issue, created_by=self.manager.id,
-            status="completed" if status == "done" else "in_progress" if status in ("doing", "delayed") else "not_started",
+            status=st,
         )
-        if status in ("done", "doing", "delayed"):
-            t.effective_progress = prog if status in ("doing", "delayed") else 100.0
+        if st == "completed":
+            t.effective_progress = 100.0
+            t.schedule_progress = 100.0
+        elif st in ("in_progress", "delayed"):
+            t.effective_progress = prog
             t.schedule_progress = prog
         t.baseline_start = t.plan_start
         t.baseline_end = t.plan_end
@@ -189,6 +202,7 @@ class P:
             t.issue_resolve_plan_date = self.d(issue.get("resolve", end))
         self.db.add(t)
         self.db.flush()
+        self.intended[t.id] = (st, 100.0 if st == "completed" else float(prog))
         self.db.add(TaskAssignment(task_id=t.id, user_id=u.id, workload_hours=hours if hours is not None else work, assigned_by=self.manager.id))
         if self.last_task and parent is None:
             self.deps.append((self.last_task, t.id, 0))  # 그룹 내 이전 Task FS 연쇄
@@ -300,6 +314,163 @@ def backfill_feedback(db: Session, project: Project, users: dict, today: date):
     db.commit()
 
 
+def _earn_by_day(t: Task, day: date, as_of: date) -> float:
+    """데모용: 착수~종료(또는 오늘)에 진척을 나눠 그날까지의 누적 %."""
+    start = t.actual_start or t.plan_start
+    if start is None:
+        return 0.0
+    p = float(t.effective_progress or 0)
+    done = t.status == "completed" or p >= 99.5
+    if not done and p <= 0:
+        return 0.0
+    if done:
+        end = t.actual_end or t.plan_end or as_of
+        if day < start:
+            return 0.0
+        if day >= end:
+            return 100.0
+        span = max((end - start).days, 1)
+        return round(100.0 * (day - start).days / span, 1)
+    if day < start:
+        return 0.0
+    if day >= as_of:
+        return p
+    span = max((as_of - start).days, 1)
+    return round(p * (day - start).days / span, 1)
+
+
+def polish_demo_project(builder: P, today: date, *, behind: bool = False) -> None:
+    """시드 진척을 엔진이 덮어쓰지 않게 잠그고, 실제 착수/종료일과 주간 스냅샷을 채운다."""
+    from app.services.schedule_service import _aggregate_parents, compute_project_schedule
+
+    db = builder.db
+    tasks = db.query(Task).filter_by(project_id=builder.project.id, is_deleted=False).all()
+    by_id = {t.id: t for t in tasks}
+    child_ids = {t.parent_id for t in tasks if t.parent_id}
+
+    for tid, (st, _prog) in builder.intended.items():
+        t = by_id.get(tid)
+        if t is None or t.id in child_ids:
+            continue
+        ps, pe = t.plan_start, t.plan_end
+        sp = float(t.schedule_progress or 0)
+        t.actual_end = None
+        if ps and today < ps:
+            t.status = "not_started"
+            t.effective_progress = 0.0
+            t.actual_start = None
+        elif st == "completed" and pe and today >= pe:
+            t.status = "completed"
+            t.effective_progress = 100.0
+            t.actual_start = ps
+            t.actual_end = pe
+        elif st == "completed":
+            t.status = "in_progress"
+            t.effective_progress = round(min(95.0, max(sp, sp + 5)), 1)
+            t.actual_start = ps
+        elif st == "delayed":
+            t.status = "delayed"
+            t.effective_progress = round(min(90.0, max(5.0, sp * 0.58)), 1) if sp > 0 else 8.0
+            started = (ps + timedelta(days=4)) if ps else None
+            t.actual_start = ps if (started is None or started > today) else started
+        elif st == "not_started":
+            if ps and today >= ps:
+                t.status = "delayed"
+                t.effective_progress = round(max(4.0, sp * 0.35), 1)
+                started = ps + timedelta(days=5)
+                t.actual_start = ps if started > today else started
+            else:
+                t.status = "not_started"
+                t.effective_progress = 0.0
+                t.actual_start = None
+        else:
+            t.status = "in_progress"
+            t.effective_progress = round(min(96.0, max(sp * 0.72, 5.0 if sp > 8 else sp)), 1)
+            t.actual_start = ps
+        t.user_adjustment = round((t.effective_progress or 0) - (t.schedule_progress or 0), 1)
+
+    if behind:
+        for t in by_id.values():
+            if t.id in child_ids:
+                continue
+            if t.status not in ("in_progress", "delayed"):
+                continue
+            sp = float(t.schedule_progress or 0)
+            t.status = "delayed"
+            t.effective_progress = round(min(42.0, max(8.0, sp * 0.48)), 1)
+            if t.plan_start:
+                slipped = t.plan_start + timedelta(days=7)
+                t.actual_start = t.plan_start if slipped > today else slipped
+            t.user_adjustment = round((t.effective_progress or 0) - (t.schedule_progress or 0), 1)
+    else:
+        active = [
+            t for t in by_id.values()
+            if t.id not in child_ids and t.status == "in_progress" and (t.effective_progress or 0) > 8
+        ]
+        active.sort(key=lambda x: -(x.workload or 0))
+        for t in active[:3]:
+            t.status = "delayed"
+            t.effective_progress = round(max(4.0, (t.effective_progress or 0) * 0.62), 1)
+            t.user_adjustment = round((t.effective_progress or 0) - (t.schedule_progress or 0), 1)
+
+    _aggregate_parents(tasks)
+    for t in tasks:
+        if t.id not in child_ids:
+            continue
+        kids = [c for c in tasks if c.parent_id == t.id]
+        starts = [c.actual_start for c in kids if c.actual_start]
+        if starts:
+            t.actual_start = min(starts)
+        done_kids = [c for c in kids if c.status == "completed" and c.actual_end]
+        if done_kids and len(done_kids) == len(kids):
+            t.actual_end = max(c.actual_end for c in done_kids if c.actual_end)
+
+    db.flush()
+
+    result = compute_project_schedule(db, builder.project, today)
+    plan_by_day: dict[date, float] = {d: pct for d, pct in result.plan_curve}
+
+    leaves = [t for t in tasks if t.id not in child_ids]
+    starts = [t.plan_start for t in leaves if t.plan_start]
+    if not starts:
+        return
+    db.query(ProgressSnapshot).filter_by(project_id=builder.project.id).delete()
+    day = min(starts)
+    while day <= today:
+        wsum = 0.0
+        acc = 0.0
+        for t in leaves:
+            w = max(t.workload, 1.0)
+            wsum += w
+            acc += _earn_by_day(t, day, today) * w
+        actual = round(acc / wsum, 1) if wsum else 0.0
+        plan = plan_by_day.get(day)
+        if plan is None:
+            earlier = [pct for d, pct in result.plan_curve if d <= day]
+            plan = earlier[-1] if earlier else 0.0
+        db.add(ProgressSnapshot(
+            project_id=builder.project.id,
+            snapshot_date=day,
+            actual_progress=actual,
+            plan_progress=plan,
+        ))
+        day += timedelta(days=7)
+    today_row = db.query(ProgressSnapshot).filter_by(
+        project_id=builder.project.id, snapshot_date=today
+    ).first()
+    if today_row:
+        today_row.actual_progress = result.actual_progress
+        today_row.plan_progress = result.plan_progress
+    else:
+        db.add(ProgressSnapshot(
+            project_id=builder.project.id,
+            snapshot_date=today,
+            actual_progress=result.actual_progress,
+            plan_progress=result.plan_progress,
+        ))
+    db.flush()
+
+
 def seed(db: Session) -> None:
     ensure_schema()
     Base.metadata.create_all(bind=engine)
@@ -346,7 +517,7 @@ def seed(db: Session) -> None:
         users[username] = u
     db.flush()
 
-    today = date(2026, 8, 26)
+    today = date.today()
 
     # ================================================================ Project A
     a = P(db, users, "Project A - 스마트팩토리 MES 구축",
@@ -372,7 +543,7 @@ def seed(db: Session) -> None:
     # --- HW 설계
     hw1 = a.task("HW 아키텍처 설계", "HW 설계", 12, 18, 48, "infra", "done", 100)
     a.task("공정 설비 요구 분석", "HW 설계", 12, 16, 32, "dev_mes", "done", 100, parent=hw1)
-    a.task("센서·게이트웨이 사양 정의", "HW 설계", 14, 19, 40, "dev_fw", "done", 90, parent=hw1)
+    a.task("센서·게이트웨이 사양 정의", "HW 설계", 14, 19, 40, "dev_fw", "done", 100, parent=hw1)
     iface = a.task("설비 인터페이스 명세", "HW 설계", 19, 26, 40, "infra", "doing", 60)
     a.task("OPC UA 연계 설계", "HW 설계", 21, 27, 40, "dev_back", "doing", 55, parent=iface)
     a.task("MQTT 토픽 설계", "HW 설계", 22, 28, 32, "dev_fw", "doing", 50, parent=iface)
@@ -468,7 +639,7 @@ def seed(db: Session) -> None:
     # ================================================================ Project B
     b = P(db, users, "Project B - 커머스 앱 리뉴얼",
           "B2C 이커머스 모바일 앱 전면 리뉴얼: 리서치/디자인/백엔드/앱 개발/QA/출시",
-          "pm_b", date(2026, 8, 17), [
+          "pm_b", date(2026, 6, 1), [
               "pm_b", "dev_back", "dev_fe", "plan", "design", "qa", "dba", "dev_mes"])
     b.bind_users(users)
     b.group("리서치·기획", 1)
@@ -779,9 +950,13 @@ def seed(db: Session) -> None:
     for p in (a, b, c):
         apply_engine_progress(db, p.project, today)
 
-    # 진행 중/지연 Task 피드백 백필(다양한 사용자 의견)
+    for p in (a, b, c):
+        polish_demo_project(p, today, behind="Project B" in p.project.name)
+
     for p in (a, b, c):
         backfill_feedback(db, p.project, users, today)
+
+    db.commit()
 
     print("=== 시드 데이터 생성 완료 ===")
     print(f"  사용자: {len(users)}명")

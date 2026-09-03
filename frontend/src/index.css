@@ -1,3 +1,39 @@
+@font-face {
+  font-family: 'LGSmart';
+  src: url('./assets/fonts/LGSmHaL.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'LGSmart';
+  src: url('./assets/fonts/LGSmHaR.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'LGSmart';
+  src: url('./assets/fonts/LGSmHaSB.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'LGSmart';
+  src: url('./assets/fonts/LGSmHaSB.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'LGSmart';
+  src: url('./assets/fonts/LGSmHaB.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -50,8 +86,21 @@
   html {
     -webkit-font-smoothing: antialiased;
   }
+  html,
+  body,
+  #root,
+  button,
+  input,
+  textarea,
+  select {
+    font-family: LGSmart, 'LG스마트체', 'LG Smart_H', sans-serif;
+  }
   body {
-    @apply bg-page text-ink-900 transition-colors;
+    @apply bg-page text-ink-900 font-sans transition-colors;
+  }
+  pre,
+  code {
+    font-family: LGSmart, 'LG스마트체', 'LG Smart_H', sans-serif;
   }
   button {
     -webkit-tap-highlight-color: transparent;
@@ -112,4 +161,14 @@ a[aria-current='page'] svg {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Tailwind preflight의 mono가 요약을 덮지 않게 */
+pre,
+code,
+kbd,
+samp,
+.ai-summary,
+.ai-summary * {
+  font-family: 'LGSmart', 'LG스마트체', 'LG Smart_H', sans-serif !important;
 }

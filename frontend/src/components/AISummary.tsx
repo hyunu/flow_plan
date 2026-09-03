@@ -136,9 +136,12 @@ export function AISummary({
 
   if (!structured) {
     return (
-      <pre className="text-[13px] leading-relaxed text-ink-700 whitespace-pre-wrap font-sans">
+      <div
+        className="ai-summary text-[13px] leading-relaxed text-ink-700 whitespace-pre-wrap"
+        style={{ fontFamily: 'LGSmart, sans-serif' }}
+      >
         {linkifyTasks(content, catalog)}
-      </pre>
+      </div>
     )
   }
 
@@ -146,7 +149,7 @@ export function AISummary({
   const riskTone = risk === 'HIGH' ? 'red' : risk === 'WARNING' ? 'amber' : 'green'
 
   return (
-    <div className="space-y-4">
+    <div className="ai-summary space-y-4" style={{ fontFamily: 'LGSmart, sans-serif' }}>
       <div className="flex items-center gap-3">
         <span className="text-[13px] text-slate-500">전반 위험도</span>
         <Badge tone={riskTone}>{risk}</Badge>

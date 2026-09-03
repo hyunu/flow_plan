@@ -12,7 +12,7 @@ const DAY_W_MIN = 8
 const DAY_W_MAX = 72
 
 const cv = (name: string) => `rgb(var(--${name}))`
-const FONT = 'Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif'
+const FONT = 'LGSmart, "LG스마트체", "LG Smart_H", sans-serif'
 
 const GROUP_TINTS = [cv('surface-100'), cv('surface-50'), cv('surface-100'), cv('surface-50'), cv('surface-100')]
 

@@ -202,7 +202,7 @@ def run_schedule_engine(
     for t in tasks:
         if t.id not in nodes:
             continue
-        progress = progress_map.get(t.id, 0.0)
+        progress = t.effective_progress
         ff = _forecast_finish_for_task(t, project_cal, today, progress)
         if ff and ff > t.plan_end:
             duration = max(1, project_cal.count_workdays(t.plan_start, ff))

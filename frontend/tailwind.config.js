@@ -19,7 +19,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Pretendard', '"Apple SD Gothic Neo"', '"Malgun Gothic"', 'system-ui', 'sans-serif'],
+        sans: ['LGSmart', '"LG스마트체"', '"LG Smart_H"', 'sans-serif'],
+        mono: ['LGSmart', '"LG스마트체"', '"LG Smart_H"', 'sans-serif'],
       },
       colors: {
         brand: {

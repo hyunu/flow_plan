@@ -145,6 +145,7 @@ export function Manual() {
             </div>
             <div className="text-xs text-slate-400">
               계산은 잎(leaf) 태스크만 사용합니다. 부모 태스크는 자식 작업량 합산이라 이중 계상을 막기 위해 제외됩니다.
+              차트에 그리는 네 선의 차이는 <a href="#curve" className="text-brand-600 hover:underline">4. 진척 곡선</a>을 보세요.
             </div>
             <Example title="진척률 읽는 법">
               계획 9.4% vs 실제 19.1% → Gap <b>−9.7</b> = 실제가 계획보다 빠름(양호). 반대로 계획 40% vs 실제 35% → Gap
@@ -157,24 +158,96 @@ export function Manual() {
       {/* 4. 진척 곡선 */}
       <section id="curve" className="scroll-mt-24">
         <div className="card p-6">
-          <PanelHeader title="4. 진척 곡선 (S-Curve)" icon={<IconReport size={15} />} />
-          <div className="text-sm text-slate-600 leading-relaxed space-y-2">
-            <p>가로는 날짜, 세로는 누적 진척률(%)입니다. 오늘 세로선에서의 값이 상단 KPI와 일치합니다.</p>
-            <ul className="space-y-1.5">
-              <Li><b className="text-slate-600">계획(실선)</b> — 계획 일정을 시간 경과로 페이싱한 곡선. 오늘 값 = ‘계획 진척률’, 마지막 계획 종료일에 100%.</Li>
-              <Li><b className="text-slate-400">Baseline(대시)</b> — 기준선 일정이 설정된 경우 비교용으로 표시.</Li>
-              <Li><b className="text-slate-800">실제(굵은 실선)</b> — 실제 진척 작업량을 태스크 시작일~오늘에 배분해 누적한 곡선.</Li>
-              <Li><b className="text-slate-500">예측(점선)</b> — 계획 곡선을 <b>예상 지연일만큼 오른쪽으로 평행이동</b>한 전망. 계획이 100% 도달하는 날짜가 지연일만큼 늦춰집니다.</Li>
-              <Li><b>마일스톤 마커</b> — 실행(검정)·계획(회색)·예측(핑크) 3가지로 구분. 예측 마일스톤은 계획 마일스톤과 <b>같은 진척률(Y)</b>에서 날짜만 지연일만큼 오른쪽에 표시됩니다.</Li>
-              <Li><b>지연 구간</b> — 계획 완료일부터 예측 완료일까지의 구간으로, 차트에서 음영과 함께 “계획/예측” 날짜 라벨로 표시됩니다.</Li>
-            </ul>
-            <Example title="S-Curve 읽는 법 (Project A 예시)">
-              계획 완료일 1/21(오픈)에서 계획선이 100%에 도달하고, 예상 지연 21일이 반영된 예측선은 2/11에 100%에 도달합니다.
-              실제선이 계획선보다 <b>위에</b> 있으면 일정을 앞서가고, <b>아래</b>에 있으면 지연입니다.
+          <PanelHeader title="4. 진척 곡선 (S-Curve) — 선 읽는 법" icon={<IconReport size={15} />} />
+          <div className="text-sm text-slate-600 leading-relaxed space-y-3">
+            <p>
+              가로는 <b>날짜</b>, 세로는 <b>누적 진척률(%)</b>입니다. 네 선은 모양이 비슷해 보여도 <b>묻는 질문이 다릅니다.</b>
+              같은 날의 %를 서로 바꿔 읽으면 안 됩니다. 오늘을 가리키는 세로 점선 위의 숫자가 대시보드 상단 KPI와 같습니다.
+            </p>
+
+            <div className="overflow-x-auto rounded-xl ring-1 ring-slate-100">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="text-left text-slate-400 bg-surface-50">
+                    <th className="py-2 px-3 font-semibold">선</th>
+                    <th className="py-2 px-3 font-semibold">한 줄 정의</th>
+                    <th className="py-2 px-3 font-semibold">무엇으로 계산하나</th>
+                    <th className="py-2 px-3 font-semibold">언제 바뀌나</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50 text-slate-600">
+                  <tr>
+                    <td className="py-2.5 px-3 font-semibold text-ink-900 whitespace-nowrap">Baseline<br /><span className="font-normal text-[11px] text-slate-400">회색 점선</span></td>
+                    <td className="py-2.5 px-3">맨 처음 약속한 일정 페이스</td>
+                    <td className="py-2.5 px-3">태스크를 만들 때 저장된 <b>최초 계획 시작~종료</b>의 작업일 경과 비율</td>
+                    <td className="py-2.5 px-3">일정을 고쳐도 <b>거의 안 바뀜</b> (비교용 기준선)</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-semibold text-ink-900 whitespace-nowrap">계획<br /><span className="font-normal text-[11px] text-slate-400">옅은 회색 점선</span></td>
+                    <td className="py-2.5 px-3">지금 적어 둔 일정대로면 그날까지 몇 %여야 하나</td>
+                    <td className="py-2.5 px-3">현재 <b>계획 시작~종료</b>에서 그날까지 지난 작업일 ÷ 전체 작업일. 실제 완료량은 보지 않음</td>
+                    <td className="py-2.5 px-3">계획 날짜를 수정할 때</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-semibold text-ink-900 whitespace-nowrap">실제<br /><span className="font-normal text-[11px] text-slate-400">검은 실선 (2배 두께)</span></td>
+                    <td className="py-2.5 px-3">지금 일이 얼마나 끝났나</td>
+                    <td className="py-2.5 px-3">각 태스크 <b>진척률(effective)</b>을 작업량으로 가중 평균. 과거는 <b>그날 저장한 스냅샷</b></td>
+                    <td className="py-2.5 px-3">진척을 올리거나 현황판을 열어 그날 값이 기록될 때</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-3 font-semibold text-ink-900 whitespace-nowrap">예측<br /><span className="font-normal text-[11px] text-slate-400">빨간 점선</span></td>
+                    <td className="py-2.5 px-3">이 상태면 앞으로 언제 끝나나</td>
+                    <td className="py-2.5 px-3">오늘 <b>실제 %</b>에서 시작해, 남은 일·의존성(CPM)·예상 지연만큼 계획을 오른쪽으로 민 곡선. AI 추측이 아님</td>
+                    <td className="py-2.5 px-3">진척·일정·선행 관계가 바뀔 때</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <div className="font-semibold text-ink-900 mb-1.5">오늘 숫자만 먼저 읽기</div>
+              <ul className="space-y-1.5">
+                <Li>계획 % = “현재 일정대로면 오늘은 여기까지여야 한다.” 날짜만 지나면 올라갑니다. 일을 안 해도 올라갈 수 있습니다.</Li>
+                <Li>실제 % = “지금 완료된 일의 비율.” 진척을 안 올리면 그대로입니다.</Li>
+                <Li>실제 &gt; 계획 = 일정 페이스보다 <b>일을 더 해 둔 상태</b>(앞섬). 실제 &lt; 계획 = <b>일정만 지나고 일은 덜 된 상태</b>(지연).</Li>
+                <Li>Baseline이 계획보다 아래면, 지금 계획은 최초안보다 앞에 있거나 작업이 앞구간에 몰려 있다는 뜻입니다.</Li>
+              </ul>
+            </div>
+
+            <Example title="오늘 실제 19.1% · 계획 10.8% 이면">
+              날짜상 계획보다 일을 더 해 두었다는 뜻입니다. “그래프가 위로 가서 지연”이 아닙니다.
+              실제선이 계획선 <b>위</b> = 앞섬, <b>아래</b> = 지연입니다.
             </Example>
+
+            <div>
+              <div className="font-semibold text-ink-900 mb-1.5">실제선이 가로로 멈추는 이유</div>
+              <p>
+                실제선은 매일 자동으로 오르지 않습니다. <b>일별 스냅샷</b>이 있는 날만 값이 바뀌고, 없는 날은 직전 %를 그대로 이어 그립니다.
+                가로선은 “현장이 멈췄다”고 단정할 수 없고, <b>그 기간에 새 진척이 기록되지 않았다</b>는 뜻에 가깝습니다.
+              </p>
+            </div>
+
+            <div>
+              <div className="font-semibold text-ink-900 mb-1.5">예측선이 가로로 보이거나, 확대하면 이상해 보이는 이유</div>
+              <ul className="space-y-1.5">
+                <Li>예측은 오늘 실제에서 시작해 <b>프로젝트 끝까지</b> 이어집니다. 지연된 계획의 초반 %로 떨어지지 않습니다.</Li>
+                <Li>지연이 있으면 계획 곡선을 그만큼 오른쪽으로 밉니다. 지연이 0이면 예측과 계획은 같은 모양입니다.</Li>
+                <Li>차트를 드래그해 확대한 화면은 <b>전체 일정이 아닙니다.</b> 더블클릭 또는 전체보기로 처음~완료까지를 봐야 100%와 지연 구간이 맞습니다.</Li>
+              </ul>
+            </div>
+
+            <div>
+              <div className="font-semibold text-ink-900 mb-1.5">그 밖에 보이는 표시</div>
+              <ul className="space-y-1.5">
+                <Li><b>지연 구간 음영</b> — 계획 완료일부터 예측 완료일까지입니다. 확대 화면의 오늘 근처 색칠은 실제 영역 채움일 수 있으니, 음영 하단의 “계획 ○○ / 예측 ○○” 날짜를 확인하세요.</Li>
+                <Li><b>마일스톤</b> — 계획 곡선 높이에 찍힌 중간 목표(착수·설계 완료·오픈 등). 예측 마일스톤은 같은 높이에서 날짜만 지연일만큼 오른쪽에 있습니다.</Li>
+                <Li><b>오픈이 100%</b>에 있는 것은 “입력된 계획 종료일 기준으로 일이 끝나는 날”입니다. 예측 완료일이 더 오른쪽이면, 엔진이 남은 일·의존성으로 끝을 미룬 것입니다.</Li>
+              </ul>
+            </div>
+
             <Tip>
-              차트를 <b>드래그하면 해당 구간으로 확대</b>되고, <b>+/−</b> 버튼으로 확대/축소, <b>더블클릭</b> 또는 <b>전체보기</b>로 원래 범위로 돌아옵니다.
-              마일스톤 이름을 클릭하면 연결된 태스크로 이동할 수 있습니다.
+              드래그로 구간 확대, 확대 후 드래그로 이동, Shift+드래그로 다시 확대, +/− · 더블클릭 · 전체보기로 복귀합니다.
+              선 의미가 헷갈리면 이 설명서 목차 <b>4. 진척 곡선</b>을 다시 보면 됩니다.
             </Tip>
           </div>
         </div>
@@ -357,12 +430,23 @@ export function Manual() {
           <PanelHeader title="12. FAQ · 문제 해결" icon={<IconManual size={15} />} />
           <div className="text-sm text-slate-600 leading-relaxed space-y-2.5">
             <div>
+              <b>Q. Baseline · 계획 · 실제 · 예측이 뭐가 다른가요?</b>
+              <div className="text-[13px] text-slate-500 mt-0.5">
+                Baseline은 최초 일정, 계획은 지금 적어 둔 날짜 페이스, 실제는 완료된 일의 %, 예측은 앞으로 끝나는 시점입니다.
+                자세한 표는 위 <a href="#curve" className="text-brand-600 hover:underline">4. 진척 곡선</a>을 보세요.
+              </div>
+            </div>
+            <div>
               <b>Q. S-Curve의 예측선이 계획선과 왜 다른가요?</b>
-              <div className="text-[13px] text-slate-500 mt-0.5">예측선은 “계획 곡선을 예상 지연일만큼 오른쪽으로 평행이동”한 값입니다. 지연이 없으면 계획선과 겹칩니다.</div>
+              <div className="text-[13px] text-slate-500 mt-0.5">예측선은 오늘 실제에서 시작해, 계획 곡선을 예상 지연일만큼 오른쪽으로 민 전망입니다. 지연이 없으면 계획과 같은 모양입니다. AI가 그린 선이 아닙니다.</div>
+            </div>
+            <div>
+              <b>Q. 실제선·예측선이 가로로만 가는데 일이 멈춘 건가요?</b>
+              <div className="text-[13px] text-slate-500 mt-0.5">실제는 스냅샷이 있는 날만 바뀌고 없으면 직전 %를 유지합니다. 예측은 짧은 기간만 확대하면 기울기가 거의 안 보입니다. 전체보기로 프로젝트 끝까지를 확인하세요.</div>
             </div>
             <div>
               <b>Q. 계획 완료일과 오픈 마일스톤의 날짜가 다른 이유는?</b>
-              <div className="text-[13px] text-slate-500 mt-0.5">계획 완료일은 오픈(마지막 마일스톤) 기준, 예상 완료일은 여기에 지연일을 더한 값입니다. 둘 다 오픈을 완료로 봅니다.</div>
+              <div className="text-[13px] text-slate-500 mt-0.5">계획선 100%는 입력된 계획 종료일 기준이고, 예측 완료일은 남은 일·의존성으로 끝을 다시 계산한 값입니다. 음영 하단의 계획/예측 날짜를 기준으로 읽으세요.</div>
             </div>
             <div>
               <b>Q. 일정을 저장했는데 오류(409)가 나요.</b>

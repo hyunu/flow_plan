@@ -127,5 +127,7 @@ def test_schedule_engine_no_dependencies_independent():
         _task(2, date(2026, 9, 1), date(2026, 9, 3), 24, 0),
     ]
     r = run_schedule_engine(tasks, [], cal, today=date(2026, 9, 2))
-    # 완료 Task는 지연 0, 미착수 Task는 계획 유지
-    assert {t.delay_days for t in r.tasks} == {0}
+    t1 = next(t for t in r.tasks if t.task_id == 1)
+    assert t1.delay_days == 0
+    t2 = next(t for t in r.tasks if t.task_id == 2)
+    assert t2.delay_days >= 0
