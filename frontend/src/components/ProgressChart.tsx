@@ -134,7 +134,6 @@ export function ProgressChart({
   tasks,
   plannedFinish,
   forecastFinish,
-  planProgress,
   actualProgress,
   planEnd,
   expectedDelayDays,
@@ -682,15 +681,6 @@ export function ProgressChart({
     if (factor < 1 && coversFull(snapped, globalRange)) setDomain(null)
     else setDomain(snapped)
   }
-  // 계획 대비 = 실제 − 계획. +면 오늘 진척이 계획보다 높음.
-  const delta = actualProgress - planProgress
-  const calendarDelayDays = (() => {
-    const a = t(plannedFinish)
-    const b = t(forecastFinish)
-    if (a == null || b == null) return expectedDelayDays ?? 0
-    return Math.max(0, Math.round((b - a) / DAY))
-  })()
-
   const gridLines = [0, 25, 50, 75, 100].map((p) => ({ y: sy(p), p }))
 
   const xLabels = useMemo(() => {
@@ -754,36 +744,6 @@ export function ProgressChart({
 
   const chartBody = (
     <>
-
-      {/* 요약 지표 스트립 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
-        {(
-          [
-            { label: '실제 진척', value: `${actualProgress.toFixed(1)}%` },
-            {
-              label: '계획 대비',
-              value: `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%p`,
-            },
-            {
-              label: '예측 완료일',
-              value: forecastFinish ? forecastFinish.slice(5) : (plannedFinish?.slice(5) ?? '—'),
-            },
-            {
-              label: '예상 지연',
-              value: calendarDelayDays > 0 ? `+${calendarDelayDays}일` : '0일',
-              hint: plannedFinish && forecastFinish
-                ? `계획 ${plannedFinish.slice(5)} → 예측 ${forecastFinish.slice(5)}`
-                : undefined,
-            },
-          ] as { label: string; value: string; hint?: string }[]
-        ).map((item) => (
-          <div key={item.label} className="rounded-xl bg-surface-50 ring-1 ring-slate-200/80 px-3 py-2.5">
-            <div className="text-xs font-semibold text-slate-400">{item.label}</div>
-            <div className="mt-1.5 text-[22px] font-bold leading-none tracking-tight text-ink-900">{item.value}</div>
-            {item.hint && <div className="mt-1.5 text-[10px] font-medium text-slate-400">{item.hint}</div>}
-          </div>
-        ))}
-      </div>
 
       <div className="flex items-center gap-2.5 mb-2 text-[12px] font-normal tracking-tight">
         {(

@@ -37,6 +37,7 @@ export function Layout() {
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === '1')
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
+  const [mobileNav, setMobileNav] = useState(false)
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
@@ -90,10 +91,12 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
 
   return (
     <div className="min-h-screen flex">
-      {/* Sidebar */}
+      {/* Sidebar — 데스크톱: 고정 / 모바일: 햄버거로 여는 오버레이 드로어 */}
       <aside
-        className={`relative bg-black text-white/45 flex flex-col shrink-0 sticky top-0 h-screen transition-all duration-200 ${
-          collapsed ? 'w-[68px]' : 'w-44'
+        className={`${
+          mobileNav ? 'fixed inset-y-0 left-0 z-50' : 'hidden lg:flex'
+        } bg-black text-white/45 flex flex-col shrink-0 h-screen transition-all duration-200 ${
+          mobileNav ? 'w-44 shadow-2xl' : collapsed ? 'w-[68px]' : 'w-44'
         }`}
       >
         {/* 헤더: 로고 */}
@@ -121,7 +124,7 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
           </svg>
         </button>
 
-        <nav className={`flex-1 py-4 space-y-1 ${collapsed ? 'px-1.5' : 'px-3'}`}>
+        <nav className={`flex-1 py-4 space-y-1 ${collapsed ? 'px-1.5' : 'px-3'}`} onClick={() => setMobileNav(false)}>
           {sectionTitle('메뉴')}
           {nav.map(({ to, label, icon: Icon }) => (
             <NavLink
@@ -216,8 +219,20 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-card/80 backdrop-blur border-b border-slate-200/80 flex items-center justify-between px-6 sticky top-0 z-40">
-          <div className="text-sm text-slate-400 font-medium">Flow Plan</div>
+        <header className="h-16 bg-card/80 backdrop-blur border-b border-slate-200/80 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-40">
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setMobileNav(true)}
+              className="lg:hidden p-2 -ml-1 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
+              aria-label="메뉴 열기"
+              title="메뉴"
+            >
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <path d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <div className="text-sm text-slate-400 font-medium">Flow Plan</div>
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setDark((v) => !v)}
@@ -264,10 +279,15 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
             </div>
           </div>
         </header>
-        <main className="flex-1 px-8 py-7">
+        <main className="flex-1 px-4 sm:px-8 py-7">
           <Outlet />
         </main>
       </div>
+
+      {/* 모바일 드로어 백드롭 */}
+      {mobileNav && (
+        <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setMobileNav(false)} />
+      )}
 
       {/* 사이드바 툴팁 — body 최상단 Portal */}
       {tip &&

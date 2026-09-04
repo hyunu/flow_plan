@@ -160,18 +160,6 @@ export function Dashboard() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="text-right text-[13px]">
-            <div className="text-slate-400 flex items-center justify-end gap-1">
-              예상 완료
-              <InfoTip text="현재 진척률과 Critical Path(CPM) 계산을 바탕으로 예측한 프로젝트 완료일입니다. 계획 완료일 대비 지연이 예상되면 예상 지연 일수(+N일)가 빨간색으로 표시됩니다." />
-            </div>
-            <div className={`font-bold ${data.expected_delay_days > 0 ? 'text-red-600' : 'text-ink-900'}`}>
-              {data.forecast_finish || '-'}
-              {data.expected_delay_days > 0 && (
-                <span className="ml-1.5 text-xs font-medium text-red-500">+{data.expected_delay_days}일</span>
-              )}
-            </div>
-          </div>
           <Link
             to={`/projects/${projectId}/schedule`}
             className="btn-primary"
@@ -183,7 +171,7 @@ export function Dashboard() {
       </div>
 
       {/* KPI */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
         <StatCard
           label="전체 진척률"
           value={`${data.overall_progress}%`}
@@ -202,11 +190,11 @@ export function Dashboard() {
         />
         <StatCard
           label="Progress Gap"
-          value={`${data.progress_gap}%p`}
-          sub={data.progress_gap > 0 ? '계획 대비 지연 중' : '계획 이상 진행'}
+          value={`${data.progress_gap > 0 ? '-' : '+'}${Math.abs(data.progress_gap)}%p`}
+          sub={data.progress_gap > 0 ? '계획 대비 지연(-)' : '계획 이상 진행(+)'}
           icon={<IconAlert size={15} />}
           tone={data.progress_gap > 0 ? 'danger' : 'ok'}
-          hint="계획 진척률 − 실제 진척률(%p)입니다. 값이 양수면 실제가 계획을 따라가지 못하고 뒤처진(지연) 상태, 음수면 계획 이상으로 진행 중인 상태를 뜻합니다."
+          hint="실제 진척률 − 계획 진척률(%p)입니다. 음수(−)면 실제가 계획보다 뒤처져 지연 상태, 양수(+)면 계획 이상으로 진행 중인 상태를 뜻합니다."
         />
         <StatCard
           label="지연 Task"
@@ -226,44 +214,23 @@ export function Dashboard() {
           hint="아직 해결되지 않은 이슈 태스크 수입니다. 해결 예정일이 지나면 리스크로 분류되어 AI 요약과 경고에 반영됩니다."
           to={`/projects/${projectId}/schedule?view=table&filter=unresolved`}
         />
+        <StatCard
+          label="예상 완료일"
+          value={data.forecast_finish?.slice(5) || '-'}
+          sub="진척 기반 전망"
+          icon={<IconCalendar size={15} />}
+          tone={data.expected_delay_days > 0 ? 'warn' : 'ok'}
+          hint="현재 진척률과 Critical Path(CPM) 계산을 바탕으로 예측한 프로젝트 완료일입니다. 계획 완료일 대비 지연이 예상되면 예상 지연 일수가 표시됩니다."
+        />
+        <StatCard
+          label="예상 지연"
+          value={data.expected_delay_days > 0 ? `+${data.expected_delay_days}일` : '정상'}
+          sub={data.expected_delay_days > 0 ? '계획 대비 지연' : '계획 준수'}
+          icon={<IconClock size={15} />}
+          tone={data.expected_delay_days > 0 ? 'danger' : 'ok'}
+          hint={`계획 완료일(${data.planned_finish?.slice(5) || '-'}) 대비 예상 완료일이 늦어지는 일수입니다.`}
+        />
       </div>
-
-      {/* AI 요약 */}
-      {data.ai_summary ? (
-        <div className="card p-6 bg-gradient-to-br from-surface-100/60 to-card">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500 text-white grid place-items-center shadow-sm">
-              <IconSparkles size={15} />
-            </span>
-            <h3 className="text-sm font-semibold text-ink-900">프로젝트 현황 요약</h3>
-            <InfoTip
-              corner
-              text="프로젝트 데이터(진척·지연·이슈·Critical Path)를 바탕으로 AI가 생성한 현황 요약입니다. 지연 원인, 리스크 항목, 권장 대처 순서를 파악하는 데 활용하세요. 태스크 이름을 누르면 상세로 이동합니다. 결과는 프로젝트별로 저장·재생성됩니다."
-            />
-            <Link
-              to={`/projects/${projectId}/schedule`}
-              className="ml-auto text-[11px] text-brand-600 hover:underline"
-            >
-              전체 일정 보기 →
-            </Link>
-          </div>
-          <AISummary content={data.ai_summary} tasks={tasks} />
-        </div>
-      ) : (
-        <div className="card p-6 bg-gradient-to-br from-surface-100/40 to-card">
-          <div className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-lg bg-brand-500/15 text-brand-600 grid place-items-center animate-pulse">
-              <IconSparkles size={15} />
-            </span>
-            <h3 className="text-sm font-semibold text-ink-900">프로젝트 현황 요약</h3>
-            <InfoTip
-              corner
-              text="프로젝트 데이터를 바탕으로 AI가 생성하는 현황 요약입니다. 지연 원인·리스크·권장 대처를 제공합니다. 최초 1회 생성 후 새로고침 시 표시됩니다."
-            />
-            <span className="ml-auto text-xs text-slate-400">AI 분석을 준비 중입니다... (새로고침 시 표시)</span>
-          </div>
-        </div>
-      )}
 
       {/* 진척곡선 + Milestone */}
       <div className="grid lg:grid-cols-3 gap-4">
@@ -316,6 +283,43 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* 프로젝트 현황 요약 */}
+      {data.ai_summary ? (
+        <div className="card p-6 bg-gradient-to-br from-surface-100/60 to-card">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500 text-white grid place-items-center shadow-sm">
+              <IconSparkles size={15} />
+            </span>
+            <h3 className="text-sm font-semibold text-ink-900">프로젝트 현황 요약</h3>
+            <InfoTip
+              corner
+              text="프로젝트 데이터(진척·지연·이슈·Critical Path)를 바탕으로 AI가 생성한 현황 요약입니다. 지연 원인, 리스크 항목, 권장 대처 순서를 파악하는 데 활용하세요. 태스크 이름을 누르면 상세로 이동합니다. 결과는 프로젝트별로 저장·재생성됩니다."
+            />
+            <Link
+              to={`/projects/${projectId}/schedule`}
+              className="ml-auto text-[11px] text-brand-600 hover:underline"
+            >
+              전체 일정 보기 →
+            </Link>
+          </div>
+          <AISummary content={data.ai_summary} tasks={tasks} />
+        </div>
+      ) : (
+        <div className="card p-6 bg-gradient-to-br from-surface-100/40 to-card">
+          <div className="flex items-center gap-2">
+            <span className="w-7 h-7 rounded-lg bg-brand-500/15 text-brand-600 grid place-items-center animate-pulse">
+              <IconSparkles size={15} />
+            </span>
+            <h3 className="text-sm font-semibold text-ink-900">프로젝트 현황 요약</h3>
+            <InfoTip
+              corner
+              text="프로젝트 데이터를 바탕으로 AI가 생성하는 현황 요약입니다. 지연 원인·리스크·권장 대처를 제공합니다. 최초 1회 생성 후 새로고침 시 표시됩니다."
+            />
+            <span className="ml-auto text-xs text-slate-400">AI 분석을 준비 중입니다... (새로고침 시 표시)</span>
+          </div>
+        </div>
+      )}
 
       {/* 지연 / CP / Issue */}
       <div className="grid md:grid-cols-3 gap-4">

@@ -1,0 +1,57 @@
+name: build-windows
+
+on:
+  workflow_dispatch:            # 수동 실행
+  push:
+    tags: ["v*"]                # 태그(v0.2.0 등) 푸시 시 자동 빌드
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 프론트 빌드
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: 데스크톱 의존성 + 백엔드 설치
+        working-directory: desktop
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ..\backend
+
+      - name: PyInstaller 빌드 (FlowPlan.exe)
+        working-directory: desktop
+        run: pyinstaller --noconfirm flowplan.spec
+
+      - name: Inno Setup 설치파일 생성
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          if (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe") {
+            & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+          } else {
+            Write-Host "Inno Setup 미설치 — exe만 산출"
+          }
+
+      - name: 산출물 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowplan-windows
+          path: |
+            desktop/dist/FlowPlan.exe
+            desktop/dist/FlowPlanSetup.exe

@@ -6,7 +6,6 @@ const DAY = 86400000
 const ROW_H = 36
 const GRP_H = 26
 const AXIS_H = 46
-const LABEL_W = 340
 const DAY_W0 = 26
 const DAY_W_MIN = 8
 const DAY_W_MAX = 72
@@ -77,6 +76,42 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
       else next.add(id)
       return next
     })
+
+  // 수평 팬(드래그 이동) — 타임라인 뿐 아니라 Task 라벨 열에서도 동작(모바일 지원)
+  const beginPan = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return
+    const node = scrollRef.current
+    if (!node) return
+    panRef.current = { x: e.clientX, sl: node.scrollLeft, moved: false }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+  const movePan = (e: React.PointerEvent<HTMLElement>) => {
+    const p = panRef.current
+    const node = scrollRef.current
+    if (!p || !node) return
+    const dx = e.clientX - p.x
+    if (!p.moved && Math.abs(dx) < 4) return
+    p.moved = true
+    skipClickRef.current = true
+    if (!panning) setPanning(true)
+    node.scrollLeft = p.sl - dx
+  }
+  const endPan = () => {
+    skipClickRef.current = !!panRef.current?.moved
+    panRef.current = null
+    setPanning(false)
+  }
+  const cancelPan = () => {
+    skipClickRef.current = false
+    panRef.current = null
+    setPanning(false)
+  }
+  const guardClick = (e: React.MouseEvent) => {
+    if (skipClickRef.current) {
+      e.stopPropagation()
+      skipClickRef.current = false
+    }
+  }
 
   const { rows, hasChildren, childCounts } = useMemo(() => buildTaskTree(tasks, collapsed), [tasks, collapsed])
 
@@ -259,7 +294,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
 
   return (
     <div className="card overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-3 border-b border-slate-100">
         <div className="flex items-center gap-2">
           <span className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 ring-1 ring-brand-100 grid place-items-center">
             <IconLayout size={15} />
@@ -269,30 +304,30 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
             <p className="text-[11px] text-slate-400 mt-0.5">세로 휠·핀치로 확대 · 가로 스크롤·드래그로 이동</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-4 text-[11px] text-slate-500">
-          <span className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
+          <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
             <span className="w-3 h-1.5 rounded bg-slate-400" /> Baseline
           </span>
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
             <span className="w-3 h-1.5 rounded bg-slate-500" /> 계획
           </span>
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
             <span className="w-3 h-1.5 rounded bg-ink-900" /> 진척
           </span>
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
             <span className="w-3 h-1.5 rounded bg-slate-400/70 ring-1 ring-dashed ring-slate-500" /> 예측
           </span>
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
             <span className="w-3 h-1.5 rounded bg-slate-400 ring-2 ring-ink-900" /> Critical
           </span>
           </div>
-          <div className="flex items-center gap-0.5 ml-2">
+          <div className="flex items-center gap-0.5">
             {Math.abs(dayW - DAY_W0) > 0.4 && (
               <button
                 type="button"
                 onClick={() => setDayW(DAY_W0)}
-                className="px-2 py-1 rounded-lg text-[11px] text-slate-500 hover:text-ink-700 hover:bg-surface-100"
+                className="px-2 py-1 h-7 rounded-lg text-[11px] text-slate-500 hover:text-ink-700 hover:bg-surface-100"
               >
                 전체보기
               </button>
@@ -317,9 +352,23 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
         </div>
       </div>
 
-      <div className="flex" onMouseLeave={() => setHoverId(null)}>
+      <div
+        ref={scrollRef}
+        className="overflow-x-auto"
+        style={{ cursor: panning ? 'grabbing' : 'grab' }}
+        onMouseLeave={() => setHoverId(null)}
+        onPointerDown={beginPan}
+        onPointerMove={movePan}
+        onPointerUp={endPan}
+        onPointerCancel={cancelPan}
+        onClickCapture={guardClick}
+      >
+        <div className="flex leading-none" style={{ width: 'max-content' }}>
         {/* 라벨 열 */}
-        <div className="shrink-0 border-r border-slate-100 bg-card leading-none" style={{ width: LABEL_W, height: H }}>
+        <div
+          className="shrink-0 border-r border-slate-100 bg-card leading-none md:sticky md:left-0 z-10"
+          style={{ width: 'min(340px, 42vw)', height: H }}
+        >
           <div
             className="box-border sticky top-0 z-20 flex items-center px-5 text-[12px] font-semibold text-ink-700 bg-surface-50 border-b border-slate-100"
             style={{ height: AXIS_H }}
@@ -376,44 +425,9 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
 
         {/* 타임라인 */}
         <div
-          ref={scrollRef}
-          className="flex-1 overflow-x-auto leading-none"
-          style={{ cursor: panning ? 'grabbing' : 'grab' }}
+          className="shrink-0 leading-none"
+          style={{ width: W, height: H }}
           onDoubleClick={() => setDayW(DAY_W0)}
-          onPointerDown={(e) => {
-            if (e.button !== 0) return
-            const node = scrollRef.current
-            if (!node) return
-            panRef.current = { x: e.clientX, sl: node.scrollLeft, moved: false }
-            node.setPointerCapture(e.pointerId)
-          }}
-          onPointerMove={(e) => {
-            const p = panRef.current
-            const node = scrollRef.current
-            if (!p || !node) return
-            const dx = e.clientX - p.x
-            if (!p.moved && Math.abs(dx) < 4) return
-            p.moved = true
-            skipClickRef.current = true
-            if (!panning) setPanning(true)
-            node.scrollLeft = p.sl - dx
-          }}
-          onPointerUp={() => {
-            skipClickRef.current = !!panRef.current?.moved
-            panRef.current = null
-            setPanning(false)
-          }}
-          onPointerCancel={() => {
-            skipClickRef.current = false
-            panRef.current = null
-            setPanning(false)
-          }}
-          onClickCapture={(e) => {
-            if (skipClickRef.current) {
-              e.stopPropagation()
-              skipClickRef.current = false
-            }
-          }}
         >
           <svg width={W} height={H} className="block overflow-visible">
             {/* 그룹 밴드 배경 */}
@@ -581,6 +595,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
               )
             })}
           </svg>
+        </div>
         </div>
       </div>
 

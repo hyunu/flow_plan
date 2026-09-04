@@ -1,6 +1,14 @@
 import { Link } from 'react-router-dom'
 
-export function InfoTip({ text, className = '', corner = false }: { text: string; className?: string; corner?: boolean }) {
+export function InfoTip({
+  text,
+  className = '',
+  corner = false,
+}: {
+  text: string
+  className?: string
+  corner?: boolean
+}) {
   return (
     <span
       className={`group/tip ${corner ? 'absolute right-3 bottom-3' : 'relative'} inline-flex align-middle z-[5] ${className}`}
@@ -79,9 +87,9 @@ export function StatCard({
       >
         {inner}
         {hint && <InfoTip text={hint} corner />}
-        <div className="mt-2 text-[11px] text-brand-600 opacity-0 group-hover:opacity-100 transition-opacity">
+        <span className="absolute bottom-2.5 right-5 text-[11px] text-brand-600 opacity-0 group-hover:opacity-100 transition-opacity">
           상세 보기 →
-        </div>
+        </span>
       </Link>
     )
   }

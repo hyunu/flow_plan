@@ -120,7 +120,7 @@ export function Schedule() {
   return (
     <div className="max-w-[1400px] mx-auto space-y-5">
       {/* 헤더 */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div>
           <Link
             to={`/projects/${projectId}`}
@@ -135,8 +135,8 @@ export function Schedule() {
           </h1>
         </div>
 
-        {/* 보기 전환 */}
-        <div className="flex items-center gap-3">
+        {/* 컨트롤 툴바 */}
+        <div className="flex flex-wrap items-center gap-2">
           {filterInfo && (
             <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 ring-1 ring-amber-200 text-[13px]">
               <IconFlag size={14} />
@@ -167,10 +167,10 @@ export function Schedule() {
               의존성 관리
             </button>
           )}
-          <div className="flex p-1 rounded-xl bg-surface-100 ring-1 ring-slate-200">
+          <div className="flex p-1 h-9 rounded-xl bg-surface-100 ring-1 ring-slate-200">
             <button
               onClick={() => switchView('gantt')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 px-4 h-full rounded-lg text-sm font-medium transition-all ${
                 view === 'gantt'
                   ? 'bg-card text-ink-900 shadow-card'
                   : 'text-slate-500 hover:text-ink-700'
@@ -181,7 +181,7 @@ export function Schedule() {
             </button>
             <button
               onClick={() => switchView('table')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 px-4 h-full rounded-lg text-sm font-medium transition-all ${
                 view === 'table'
                   ? 'bg-card text-ink-900 shadow-card'
                   : 'text-slate-500 hover:text-ink-700'
