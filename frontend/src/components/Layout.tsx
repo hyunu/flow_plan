@@ -29,6 +29,12 @@ const roleTone: Record<string, string> = {
   'Project Member': 'bg-white/8 text-white/70 ring-white/10',
 }
 
+const roleLabel: Record<string, string> = {
+  'System Administrator': '관리자',
+  'Project Manager': 'PM',
+  'Project Member': '멤버',
+}
+
 export function Layout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -43,6 +49,14 @@ export function Layout() {
     document.documentElement.classList.toggle('dark', dark)
     localStorage.setItem('flowplan_theme', dark ? 'dark' : 'light')
   }, [dark])
+
+  useEffect(() => {
+    const onResize = () => {
+      if (window.matchMedia('(min-width: 1024px)').matches) setMobileNav(false)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const toggleCollapse = () =>
     setCollapsed((v) => {
@@ -93,10 +107,10 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
     <div className="min-h-screen flex">
       {/* Sidebar — 데스크톱: 고정 / 모바일: 햄버거로 여는 오버레이 드로어 */}
       <aside
-        className={`${
-          mobileNav ? 'fixed inset-y-0 left-0 z-50' : 'hidden lg:flex'
-        } bg-black text-white/45 flex flex-col shrink-0 h-screen transition-all duration-200 ${
-          mobileNav ? 'w-44 shadow-2xl' : collapsed ? 'w-[68px]' : 'w-44'
+        className={`relative bg-black text-white/45 flex-col shrink-0 sticky top-0 h-screen transition-all duration-200 ${
+          mobileNav
+            ? 'fixed inset-y-0 left-0 z-50 flex w-44 shadow-2xl'
+            : `hidden lg:flex ${collapsed ? 'w-[68px]' : 'w-44'}`
         }`}
       >
         {/* 헤더: 로고 */}
@@ -167,8 +181,11 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
             {!collapsed && (
               <div className="min-w-0 flex-1">
                 <div className="text-sm text-white font-medium truncate">{user?.name}</div>
-                <span className={`badge mt-0.5 ring-1 ${roleTone[roleName] || 'bg-white/10 text-white/75 ring-white/10'}`}>
-                  {roleName}
+                <span
+                  title={roleName}
+                  className={`badge mt-0.5 max-w-full truncate ring-1 ${roleTone[roleName] || 'bg-white/10 text-white/75 ring-white/10'}`}
+                >
+                  {roleLabel[roleName] || roleName}
                 </span>
               </div>
             )}

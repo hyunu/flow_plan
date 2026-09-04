@@ -197,6 +197,8 @@ export function ProgressChart({
     originMin: number
     originMax: number
   } | null>(null)
+  const plotRef = useRef<SVGRectElement | null>(null)
+  const viewRef = useRef({ min: 0, max: 1, plotW: 1, domain: null as { min: number; max: number } | null, globalRange })
 
   const effMin = domain?.min ?? globalRange.min
   const effMax = domain?.max ?? globalRange.max
@@ -672,15 +674,45 @@ export function ProgressChart({
       .map((m) => m.name)
     return { dateLabel, rows, marks: [...new Set(marks)] }
   }, [hover, totalWork, min, planCum, baseCum, actualCum, foreCum, showSeries, todayTs, amsPts, msPts, fmsPts])
-  const zoomAt = (factor: number) => {
+  const zoomAround = (factor: number, anchorTs?: number) => {
     if (factor < 1 && domain == null) return
-    const c = (effMin + effMax) / 2
-    const half = (effMax - effMin) / 2 / factor
-    if (factor > 1 && half < DAY * 3) return
-    const snapped = snapRange(c - half, c + half, globalRange)
+    const span = effMax - effMin
+    const nextSpan = span / factor
+    if (factor > 1 && nextSpan < DAY * 3) return
+    const anchor = anchorTs ?? hover?.ts ?? (effMin + effMax) / 2
+    const t = span > 0 ? (anchor - effMin) / span : 0.5
+    const ratio = Math.min(Math.max(t, 0), 1)
+    const snapped = snapRange(anchor - ratio * nextSpan, anchor + (1 - ratio) * nextSpan, globalRange)
     if (factor < 1 && coversFull(snapped, globalRange)) setDomain(null)
     else setDomain(snapped)
   }
+
+  viewRef.current = { min, max, plotW, domain, globalRange }
+
+  useEffect(() => {
+    const el = plotRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const { min, max, plotW, domain, globalRange } = viewRef.current
+      const cr = el.getBoundingClientRect()
+      const x = PAD.l + ((e.clientX - cr.left) / cr.width) * plotW
+      const px = Math.max(PAD.l, Math.min(W - PAD.r, x))
+      const ts = min + ((px - PAD.l) / plotW) * (max - min)
+      const factor = e.deltaY > 0 ? 1 / 1.18 : 1.18
+      if (factor < 1 && domain == null) return
+      const span = max - min
+      const nextSpan = span / factor
+      if (factor > 1 && nextSpan < DAY * 3) return
+      const t = span > 0 ? (ts - min) / span : 0.5
+      const ratio = Math.min(Math.max(t, 0), 1)
+      const snapped = snapRange(ts - ratio * nextSpan, ts + (1 - ratio) * nextSpan, globalRange)
+      if (factor < 1 && coversFull(snapped, globalRange)) setDomain(null)
+      else setDomain(snapped)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [expanded])
   const gridLines = [0, 25, 50, 75, 100].map((p) => ({ y: sy(p), p }))
 
   const xLabels = useMemo(() => {
@@ -964,6 +996,7 @@ export function ProgressChart({
 
         {/* 드래그 확대 오버레이 */}
         <rect
+          ref={plotRef}
           x={PAD.l}
           y={PAD.t - 8}
           width={plotW}
@@ -1049,7 +1082,7 @@ export function ProgressChart({
       <div>
         <h3 className="text-sm font-semibold text-ink-900">진척 곡선 (S-Curve)</h3>
         <p className="text-xs text-slate-400 mt-0.5">
-          드래그로 확대 · 확대 후 드래그로 이동 ·{' '}
+          휠로 커서 기준 확대 · 드래그로 확대 · 확대 후 드래그로 이동 ·{' '}
           <Link to="/manual#curve" className="text-brand-600 hover:underline">
             선 읽는 법 (설명서)
           </Link>
@@ -1067,7 +1100,7 @@ export function ProgressChart({
           </button>
         )}
         <button
-          onClick={() => zoomAt(1.6)}
+          onClick={() => zoomAround(1.6)}
           className="p-1.5 rounded-lg text-slate-400 hover:text-ink-700 hover:bg-surface-100 transition-colors text-sm leading-none"
           title="확대"
           aria-label="차트 확대"
@@ -1075,7 +1108,7 @@ export function ProgressChart({
           +
         </button>
         <button
-          onClick={() => zoomAt(1 / 1.6)}
+          onClick={() => zoomAround(1 / 1.6)}
           className="p-1.5 rounded-lg text-slate-400 hover:text-ink-700 hover:bg-surface-100 transition-colors text-sm leading-none"
           title="축소"
           aria-label="차트 축소"

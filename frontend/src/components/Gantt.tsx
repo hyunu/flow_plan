@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Dependency, Task } from '../api/types'
-import { TreeConnector, TreeToggle, buildTaskTree, type TaskRow } from '../lib/taskTree'
+import { TreeConnector, TreeToggle, buildGroupedTaskTree, type TaskRow } from '../lib/taskTree'
 import { IconLayout } from './icons'
 const DAY = 86400000
 const ROW_H = 36
@@ -45,9 +45,12 @@ function netEnd(t?: Task | null) {
 
 interface RenderRow {
   kind: 'group' | 'task'
+  gid?: number
   label?: string
   row?: TaskRow
   tint?: string
+  guides?: boolean[]
+  isLast?: boolean
 }
 
 export function Gantt({ tasks, dependencies, onSelect }: Props) {
@@ -56,10 +59,17 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
   const [tipPos, setTipPos] = useState({ x: 0, y: 0 })
   const [dayW, setDayW] = useState(DAY_W0)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const labelColRef = useRef<HTMLDivElement>(null)
   const dayWRef = useRef(dayW)
   dayWRef.current = dayW
   const pendingScrollRef = useRef<number | null>(null)
-  const panRef = useRef<{ x: number; sl: number; moved: boolean } | null>(null)
+  const panRef = useRef<{
+    x: number
+    sl: number
+    moved: boolean
+    pointerId: number
+    target: HTMLElement
+  } | null>(null)
   const skipClickRef = useRef(false)
   const [panning, setPanning] = useState(false)
   const hoverTask = hoverId != null ? tasks.find((t) => t.id === hoverId) : undefined
@@ -80,10 +90,16 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
   // 수평 팬(드래그 이동) — 타임라인 뿐 아니라 Task 라벨 열에서도 동작(모바일 지원)
   const beginPan = (e: React.PointerEvent<HTMLElement>) => {
     if (e.button !== 0) return
+    if ((e.target as HTMLElement).closest('button, a, [data-no-pan]')) return
     const node = scrollRef.current
     if (!node) return
-    panRef.current = { x: e.clientX, sl: node.scrollLeft, moved: false }
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    panRef.current = {
+      x: e.clientX,
+      sl: node.scrollLeft,
+      moved: false,
+      pointerId: e.pointerId,
+      target: e.currentTarget as HTMLElement,
+    }
   }
   const movePan = (e: React.PointerEvent<HTMLElement>) => {
     const p = panRef.current
@@ -91,13 +107,24 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
     if (!p || !node) return
     const dx = e.clientX - p.x
     if (!p.moved && Math.abs(dx) < 4) return
-    p.moved = true
-    skipClickRef.current = true
-    if (!panning) setPanning(true)
+    if (!p.moved) {
+      p.moved = true
+      skipClickRef.current = true
+      p.target.setPointerCapture(p.pointerId)
+      if (!panning) setPanning(true)
+    }
     node.scrollLeft = p.sl - dx
   }
-  const endPan = () => {
-    skipClickRef.current = !!panRef.current?.moved
+  const endPan = (e?: React.PointerEvent<HTMLElement>) => {
+    const p = panRef.current
+    if (p?.moved) skipClickRef.current = true
+    if (p?.moved && e) {
+      try {
+        p.target.releasePointerCapture(p.pointerId)
+      } catch {
+        /* already released */
+      }
+    }
     panRef.current = null
     setPanning(false)
   }
@@ -113,32 +140,31 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
     }
   }
 
-  const { rows, hasChildren, childCounts } = useMemo(() => buildTaskTree(tasks, collapsed), [tasks, collapsed])
+  const { rows: treeRows, hasChildren, childCounts } = useMemo(
+    () => buildGroupedTaskTree(tasks, collapsed),
+    [tasks, collapsed],
+  )
 
-  // 그룹 밴드 + 표시 행 레이아웃
   const renderRows = useMemo<RenderRow[]>(() => {
-    const out: RenderRow[] = []
-    const bands: { name: string; start: number; end: number }[] = []
-    let cur: { name: string; start: number; end: number } | null = null
-    rows.forEach((r, i) => {
-      const g = r.task.group_name || ''
-      if (cur && cur.name === g) cur.end = i
-      else {
-        if (cur) bands.push(cur)
-        cur = { name: g, start: i, end: i }
+    let gi = 0
+    return treeRows.map((r) => {
+      if (r.kind === 'group') {
+        const tint = GROUP_TINTS[gi++ % GROUP_TINTS.length]
+        return {
+          kind: 'group' as const,
+          gid: r.gid,
+          label: r.name,
+          tint,
+          guides: r.guides,
+          isLast: r.isLast,
+        }
+      }
+      return {
+        kind: 'task' as const,
+        row: { task: r.task, depth: r.depth, guides: r.guides, isLast: r.isLast },
       }
     })
-    if (cur) bands.push(cur)
-    bands.forEach((b, bi) => {
-      if (b.name) {
-        out.push({ kind: 'group', label: b.name, tint: GROUP_TINTS[bi % GROUP_TINTS.length] })
-      }
-      for (let i = b.start; i <= b.end; i++) {
-        out.push({ kind: 'task', row: rows[i] })
-      }
-    })
-    return out
-  }, [rows])
+  }, [treeRows])
 
   const rowH = (r: RenderRow) => (r.kind === 'group' ? GRP_H : ROW_H)
 
@@ -190,10 +216,13 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
     const clamped = Math.min(DAY_W_MAX, Math.max(DAY_W_MIN, next))
     if (Math.abs(clamped - current) < 0.2) return
     const rect = el?.getBoundingClientRect()
-    const cx = anchorClientX ?? (rect ? rect.left + rect.width / 2 : 0)
-    const contentX = el && rect ? el.scrollLeft + (cx - rect.left) : 0
-    const day = current > 0 ? contentX / current : 0
-    pendingScrollRef.current = day * clamped - (cx - (rect?.left ?? 0))
+    const labelW = labelColRef.current?.offsetWidth ?? 0
+    const viewW = rect ? rect.width : 0
+    const cx = anchorClientX ?? (rect ? rect.left + labelW + Math.max(viewW - labelW, 0) / 2 : 0)
+    const xInView = rect ? cx - rect.left : 0
+    const timelineX = (el?.scrollLeft ?? 0) + xInView - labelW
+    const day = current > 0 ? timelineX / current : 0
+    pendingScrollRef.current = day * clamped - xInView + labelW
     setDayW(clamped)
   }
 
@@ -210,16 +239,23 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
     const el = scrollRef.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
+      const inLabels = !!labelColRef.current?.contains(e.target as Node)
       const horiz = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)
       const pinchZoom = e.ctrlKey || e.metaKey
+      if (inLabels && !pinchZoom) {
+        if (horiz) {
+          e.preventDefault()
+          el.scrollLeft += e.shiftKey && Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX
+        }
+        return
+      }
       if (horiz && !pinchZoom) {
         e.preventDefault()
         el.scrollLeft += e.shiftKey && Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX
         return
       }
       e.preventDefault()
-      const dy = pinchZoom ? e.deltaY : e.deltaY
-      const factor = dy > 0 ? 1 / 1.18 : 1.18
+      const factor = e.deltaY > 0 ? 1 / 1.18 : 1.18
       zoomTo(dayWRef.current * factor, e.clientX)
     }
     el.addEventListener('wheel', onWheel, { passive: false })
@@ -366,6 +402,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
         <div className="flex leading-none" style={{ width: 'max-content' }}>
         {/* 라벨 열 */}
         <div
+          ref={labelColRef}
           className="shrink-0 border-r border-slate-100 bg-card leading-none md:sticky md:left-0 z-10"
           style={{ width: 'min(340px, 42vw)', height: H }}
         >
@@ -378,11 +415,24 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
           {renderRows.map((r, idx) =>
             r.kind === 'group' ? (
               <div
-                key={`g${idx}`}
-                className="box-border shrink-0 overflow-hidden flex items-center px-5 text-[12px] font-bold text-ink-900"
+                key={`g${r.gid}`}
+                onClick={() => r.gid != null && toggle(r.gid)}
+                className="box-border shrink-0 overflow-hidden flex items-center gap-1.5 px-4 text-[12px] font-bold text-ink-900 cursor-pointer hover:brightness-[0.97]"
+                data-no-pan
                 style={{ height: GRP_H, backgroundColor: r.tint }}
               >
-                {r.label}
+                <TreeToggle
+                  taskId={r.gid!}
+                  hasChildren={r.gid != null && hasChildren.has(r.gid)}
+                  collapsed={r.gid != null && collapsed.has(r.gid)}
+                  onToggle={toggle}
+                />
+                <span className="truncate">{r.label}</span>
+                {r.gid != null && collapsed.has(r.gid) && (
+                  <span className="shrink-0 text-[10px] font-medium text-slate-400">
+                    ({childCounts.get(r.gid) || 0})
+                  </span>
+                )}
               </div>
             ) : (
               <div
@@ -433,7 +483,16 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
             {/* 그룹 밴드 배경 */}
             {renderRows.map((r, idx) =>
               r.kind === 'group' ? (
-                <rect key={`gb${idx}`} x={0} y={yOf(idx)} width={W} height={GRP_H} fill={r.tint} />
+                <rect
+                  key={`gb${idx}`}
+                  x={0}
+                  y={yOf(idx)}
+                  width={W}
+                  height={GRP_H}
+                  fill={r.tint}
+                  className="cursor-pointer"
+                  onClick={() => r.gid != null && toggle(r.gid)}
+                />
               ) : null,
             )}
             {/* 주말 음영 */}
