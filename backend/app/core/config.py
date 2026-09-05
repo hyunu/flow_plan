@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     debug: bool = False
     # 로컬 SQLite DB는 backend/data/ 폴더에서 관리 (test는 DATABASE_URL 오버라이드)
     database_url: str = "sqlite:///./data/flow_plan.db"
-    # 서버 시작 시 DB가 비어 있으면 시드 데이터를 자동 생성 (멱등: 데이터 있으면 건너뜀)
+    # 개발: 빈 DB면 데모 계정·프로젝트 자동 생성. 설치본은 SEED_ON_STARTUP=false.
     seed_on_startup: bool = True
 
     # JWT

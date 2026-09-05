@@ -206,3 +206,11 @@ def test_audit_log_created(client, admin):
 def test_audit_log_not_exposed_to_member(client, member):
     r = client.get("/audit", headers=_auth(member["access_token"]))
     assert r.status_code == 403
+
+
+def test_setup_blocked_when_users_exist(client):
+    r = client.get("/auth/setup-status")
+    assert r.status_code == 200
+    assert r.json()["needs_setup"] is False
+    r = client.post("/auth/setup", json={"username": "hacker", "password": "password1", "name": "x"})
+    assert r.status_code == 409

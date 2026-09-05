@@ -39,6 +39,9 @@ def ensure_env() -> None:
     os.environ.setdefault("DATABASE_URL", f"sqlite:///{d / 'flow_plan.db'}")
     os.environ.setdefault("FLOWPLAN_DATA_DIR", str(d))
     os.environ.setdefault("AI_PROVIDER", "mock")
+    # 설치본(PyInstaller)에는 데모 시드 계정을 넣지 않는다. 개발 실행은 그대로 시드.
+    if getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None):
+        os.environ.setdefault("SEED_ON_STARTUP", "false")
     # 백엔드가 backend/.env 를 다시 읽지 않도록 cwd 기준 .env 경로 고정은 두지 않는다
     # (환경변수가 우선이므로 충분).
 

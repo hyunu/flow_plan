@@ -24,6 +24,9 @@ export function DisplayProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     applyDisplayPrefs(prefs)
     saveDisplayPrefs(prefs)
+    const obs = new MutationObserver(() => applyDisplayPrefs(prefs))
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    return () => obs.disconnect()
   }, [prefs])
 
   const setPrefs = useCallback((next: DisplayPrefs | ((p: DisplayPrefs) => DisplayPrefs)) => {

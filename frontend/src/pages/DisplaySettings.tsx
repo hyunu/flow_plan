@@ -47,7 +47,9 @@ function Choice<T extends string>({
             type="button"
             onClick={() => onChange(o.id)}
             className={`rounded-xl px-2.5 py-2 text-left ring-1 transition-colors ${
-              on ? 'bg-white ring-brand-300 shadow-sm' : 'bg-surface-50 ring-transparent hover:ring-slate-200'
+              on
+                ? 'bg-brand-50 dark:bg-brand-500/25 ring-brand-300 dark:ring-brand-400/40'
+                : 'bg-surface-50 ring-transparent hover:ring-slate-200 dark:hover:ring-white/10'
             }`}
           >
             <div className={`text-[12px] font-semibold ${on ? 'text-ink-900' : 'text-slate-500'}`}>{o.label}</div>
@@ -69,6 +71,16 @@ function PreviewPane() {
   ]
   return (
     <div className="space-y-4">
+      <div>
+        <div className="text-[11px] font-semibold text-slate-400 mb-2">화면 배색</div>
+        <div className="flex h-14 rounded-lg overflow-hidden ring-1 ring-slate-200">
+          <div className="w-8 shrink-0" style={{ background: prefs.colors.sidebar }} title="사이드바" />
+          <div className="flex-1 p-2 space-y-1.5" style={{ background: 'rgb(var(--bg))' }}>
+            <div className="h-3 rounded" style={{ background: 'rgb(var(--card))' }} />
+            <div className="h-2 w-2/3 rounded" style={{ background: 'rgb(var(--brand-500))' }} />
+          </div>
+        </div>
+      </div>
       <div>
         <div className="text-[11px] font-semibold text-slate-400 mb-2">배지</div>
         <div className="flex flex-wrap gap-1.5">
@@ -176,7 +188,7 @@ export function DisplaySettings() {
       <div className="space-y-4 min-w-0">
         <FoldCard
           title="색 테마"
-          desc="한 번 고르면 배지·간트·곡선이 같이 바뀝니다."
+          desc="사이드바 색이 기준입니다. 본문 배경·카드·버튼 톤이 같이 맞춰집니다."
           open={open.theme}
           onToggle={() => toggle('theme')}
           extra={
@@ -195,9 +207,12 @@ export function DisplaySettings() {
                   type="button"
                   onClick={() => applyPalette(id)}
                   className={`text-left rounded-xl px-3 py-2.5 ring-1 transition-colors ${
-                    on ? 'bg-white ring-brand-300 shadow-sm' : 'bg-surface-50 ring-slate-100 hover:ring-slate-200'
+                    on
+                      ? 'bg-brand-50 dark:bg-brand-500/25 ring-brand-300 dark:ring-brand-400/40'
+                      : 'bg-surface-50 ring-slate-100 dark:ring-white/10 hover:ring-slate-200 dark:hover:ring-white/15'
                   }`}
                 >
+                  <div className="h-1.5 rounded-full mb-1.5 ring-1 ring-black/5" style={{ background: p.colors.sidebar }} />
                   <div className="flex gap-1 mb-1.5">
                     {['completed', 'in_progress', 'delayed', 'critical', 'not_started'].map((k) => (
                       <span
@@ -377,6 +392,31 @@ export function DisplaySettings() {
                   </div>
                 )
               })}
+              <div className="rounded-xl bg-surface-50 px-3 py-2.5 space-y-2">
+                <div className="text-[12px] font-semibold text-ink-800">
+                  사이드바
+                  <span className="ml-1.5 font-normal text-slate-400">왼쪽 메뉴 배경</span>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <input
+                    className="input !py-1.5 text-[12px] font-mono w-[6.5rem] shrink-0"
+                    value={prefs.colors.sidebar}
+                    onChange={(e) =>
+                      setPrefs((p) => ({ ...p, colors: { ...p.colors, sidebar: e.target.value } }))
+                    }
+                    aria-label="사이드바 색 코드"
+                  />
+                  <input
+                    type="color"
+                    className="h-9 w-9 rounded-lg border border-slate-200 cursor-pointer bg-white shrink-0"
+                    value={/^#[0-9a-fA-F]{6}$/.test(prefs.colors.sidebar) ? prefs.colors.sidebar : '#0a0a0a'}
+                    onChange={(e) =>
+                      setPrefs((p) => ({ ...p, colors: { ...p.colors, sidebar: e.target.value } }))
+                    }
+                    aria-label="사이드바 색 고르기"
+                  />
+                </div>
+              </div>
           </div>
         </FoldCard>
       </div>

@@ -27,7 +27,7 @@ from hotkey import combo_label, load_combo, start_listener
 from ipc import notify_existing, serve as serve_ipc
 from bridge import DesktopApi
 from tray import TrayIcon
-from windowutil import raise_window
+from windowutil import hide_window, raise_window
 
 PORT = config.port()
 IPC_PORT = PORT + 1
@@ -84,10 +84,7 @@ def main() -> None:
 
     def _on_closing(event):
         event.cancelled = True
-        try:
-            window.hide()
-        except Exception:
-            pass
+        hide_window(window)
 
     window.events.closing += _on_closing
 

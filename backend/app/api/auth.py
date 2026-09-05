@@ -10,11 +10,12 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     get_current_user,
+    hash_password,
     revoke_user_refresh_tokens,
     rotate_refresh_token,
     verify_password,
 )
-from app.models.entities import User
+from app.models.entities import User, UserCalendar, UserReportSetting
 from app.schemas import TokenResponse, UserRead
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -31,11 +32,59 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class SetupStatus(BaseModel):
+    needs_setup: bool
+
+
+class FirstAdminBody(BaseModel):
+    username: str
+    password: str
+    name: str = "관리자"
+
+
 def _client_ip(request: Request) -> str | None:
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else None
+
+
+@router.get("/setup-status", response_model=SetupStatus)
+def setup_status(db: Session = Depends(get_db)):
+    return SetupStatus(needs_setup=db.query(User).count() == 0)
+
+
+@router.post("/setup", response_model=TokenPair, dependencies=[Depends(rate_limit(5, 300, "setup"))])
+def setup_first_admin(body: FirstAdminBody, request: Request = None, db: Session = Depends(get_db)):
+    if db.query(User).count() > 0:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 계정이 있습니다. 로그인하세요.")
+    username = (body.username or "").strip()
+    password = body.password or ""
+    name = (body.name or "").strip() or "관리자"
+    if len(username) < 2:
+        raise HTTPException(status_code=400, detail="아이디는 2자 이상이어야 합니다.")
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="비밀번호는 8자 이상이어야 합니다.")
+    from app.seed import ensure_roles
+
+    roles = ensure_roles(db)
+    admin_role = roles["System Administrator"]
+    user = User(
+        username=username,
+        email=f"{username}@flowplan.local",
+        name=name,
+        hashed_password=hash_password(password),
+        role_id=admin_role.id,
+    )
+    db.add(user)
+    db.flush()
+    db.add(UserCalendar(user_id=user.id, daily_work_hours=8.0))
+    db.add(UserReportSetting(user_id=user.id, deliver_daily=False, deliver_weekly=True))
+    audit(db, user.id, "create", "User", user.id, reason="최초 관리자")
+    access = create_access_token(user.id)
+    refresh = create_refresh_token(db, user.id, _client_ip(request) if request else None)
+    db.commit()
+    return TokenPair(access_token=access, refresh_token=refresh, expires_in=settings_expires_in_seconds())
 
 
 @router.post("/login", response_model=TokenPair, dependencies=[Depends(rate_limit(20, 300, "login"))])

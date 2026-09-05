@@ -57,7 +57,7 @@ function TabNav({
             onClick={() => setTab(key)}
             className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-colors ${
               tab === key
-                ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-200'
+                ? 'bg-brand-50 dark:bg-brand-500/25 text-brand-700 dark:text-brand-200 ring-1 ring-brand-200 dark:ring-brand-400/40'
                 : 'text-slate-500 hover:bg-surface-100 hover:text-ink-700'
             }`}
           >

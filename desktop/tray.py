@@ -9,7 +9,7 @@ from pathlib import Path
 import pystray
 from PIL import Image, ImageDraw
 
-from windowutil import raise_window
+from windowutil import hide_window, raise_window
 
 AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 AUTOSTART_NAME = "FlowPlan"
@@ -59,10 +59,7 @@ class TrayIcon:
         raise_window(self.window)
 
     def hide(self) -> None:
-        try:
-            self.window.hide()
-        except Exception:
-            pass
+        hide_window(self.window)
 
     def _toggle(self) -> None:
         try:

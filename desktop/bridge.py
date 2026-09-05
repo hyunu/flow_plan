@@ -48,13 +48,12 @@ class DesktopApi:
         return self.get_desktop_prefs()
 
     def hide(self) -> None:
+        from windowutil import hide_window
+
         w = self.window
         if w is None:
             return
-        try:
-            w.hide()
-        except Exception:
-            pass
+        hide_window(w)
 
     def geometry(self) -> dict:
         w = self.window

@@ -195,6 +195,13 @@ export function ProgressChart({
   const [zoomRect, setZoomRect] = useState<{ x0: number; x1: number } | null>(null)
   const [panning, setPanning] = useState(false)
   const [hover, setHover] = useState<{ x: number; ts: number } | null>(null)
+
+  useEffect(() => {
+    const clear = () => setHover(null)
+    window.addEventListener('flowplan-hover-reset', clear)
+    return () => window.removeEventListener('flowplan-hover-reset', clear)
+  }, [])
+
   const dragRef = useRef<{
     startX: number
     mode: 'zoom' | 'pan'

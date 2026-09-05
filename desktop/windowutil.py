@@ -1,7 +1,36 @@
-"""창을 앞으로 가져온다. 단축키·트레이·두 번째 실행에서 같이 쓴다."""
+"""창을 앞으로 가져오거나 숨긴다. JS 브리지·트레이에서 같이 쓴다."""
 from __future__ import annotations
 
 import sys
+
+
+def _on_ui(fn) -> None:
+    if sys.platform == "darwin":
+        try:
+            from PyObjCTools.AppHelper import callAfter
+
+            callAfter(fn)
+            return
+        except Exception:
+            pass
+    fn()
+
+
+def hide_window(window) -> None:
+    def _go() -> None:
+        try:
+            window.hide()
+        except Exception:
+            pass
+        if sys.platform == "darwin":
+            try:
+                native = getattr(window, "native", None)
+                if native is not None:
+                    native.orderOut_(None)
+            except Exception:
+                pass
+
+    _on_ui(_go)
 
 
 def raise_window(window) -> None:
@@ -37,12 +66,5 @@ def raise_window(window) -> None:
                     )
                 except Exception:
                     pass
-    if sys.platform == "darwin":
-        try:
-            from PyObjCTools.AppHelper import callAfter
 
-            callAfter(_go)
-            return
-        except Exception:
-            pass
-    _go()
+    _on_ui(_go)

@@ -77,11 +77,33 @@ export function DesktopChrome({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const open = () => setSettings(true)
     window.addEventListener('flowplan-open-desk-settings', open)
-    return () => window.removeEventListener('flowplan-open-desk-settings', open)
+    const onHidden = () => {
+      if (document.visibilityState !== 'hidden') return
+      document.documentElement.classList.add('desktop-hover-off')
+      window.dispatchEvent(new Event('flowplan-hover-reset'))
+      ;(document.activeElement as HTMLElement | null)?.blur?.()
+      const thaw = () => document.documentElement.classList.remove('desktop-hover-off')
+      window.setTimeout(() => {
+        window.addEventListener('pointermove', thaw, { once: true })
+      }, 200)
+    }
+    document.addEventListener('visibilitychange', onHidden)
+    return () => {
+      window.removeEventListener('flowplan-open-desk-settings', open)
+      document.removeEventListener('visibilitychange', onHidden)
+    }
   }, [])
 
   const hide = () => {
-    void api()?.hide()
+    document.documentElement.classList.add('desktop-hover-off')
+    window.dispatchEvent(new Event('flowplan-hover-reset'))
+    ;(document.activeElement as HTMLElement | null)?.blur?.()
+    const thaw = () => document.documentElement.classList.remove('desktop-hover-off')
+    window.setTimeout(() => {
+      window.addEventListener('pointermove', thaw, { once: true })
+    }, 200)
+    const fn = api()?.hide
+    if (fn) void fn()
   }
 
   const startMove = async (e: React.PointerEvent) => {
@@ -172,8 +194,7 @@ export function DesktopChrome({ children }: { children: React.ReactNode }) {
         {edge('left-0 bottom-0 w-3 h-3 cursor-nesw-resize', 'sw')}
         {edge('right-0 bottom-0 w-3 h-3 cursor-nwse-resize', 'se')}
 
-        <div className="desktop-drag fixed top-0 left-0 right-0 h-16 z-[15]" onPointerDown={startMove} />
-        <div className="h-full overflow-hidden">{children}</div>
+        <div className="h-full overflow-hidden relative z-10">{children}</div>
         <DesktopSettingsModal open={settings} onClose={() => setSettings(false)} />
       </div>
     </DesktopWinContext.Provider>

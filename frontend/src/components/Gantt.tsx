@@ -79,6 +79,12 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
   const [panning, setPanning] = useState(false)
   const hoverTask = hoverId != null ? tasks.find((t) => t.id === hoverId) : undefined
 
+  useEffect(() => {
+    const clear = () => setHoverId(null)
+    window.addEventListener('flowplan-hover-reset', clear)
+    return () => window.removeEventListener('flowplan-hover-reset', clear)
+  }, [])
+
   const moveTip = (e: { clientX: number; clientY: number }) => setTipPos({ x: e.clientX, y: e.clientY })
   const enterTask = (id: number, e: { clientX: number; clientY: number }) => {
     setHoverId(id)

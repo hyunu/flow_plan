@@ -35,12 +35,9 @@
 }
 
 .desktop-drag {
-  -webkit-app-region: drag;
-  app-region: drag;
+  /* JS 드래그만 사용. webkit-app-region은 자식 버튼 클릭을 삼킨다. */
 }
 .desktop-no-drag {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
 }
 html.desktop-app,
 html.desktop-app body,
@@ -54,6 +51,11 @@ html.desktop-app .min-h-screen {
 }
 html.desktop-app .h-screen {
   height: 100%;
+}
+/* 숨긴 뒤 WebKit이 :hover를 붙잡은 채 복원하는 것 방지 */
+html.desktop-hover-off,
+html.desktop-hover-off * {
+  pointer-events: none !important;
 }
 
 @tailwind base;
@@ -82,6 +84,16 @@ html.desktop-app .h-screen {
     --slate-900: 15 23 42;
     --slate-950: 2 6 23;
     --chart-mark: 15 23 42;
+    --brand-50: 247 248 250;
+    --brand-100: 238 240 244;
+    --brand-200: 224 228 234;
+    --brand-300: 196 203 214;
+    --brand-400: 154 165 180;
+    --brand-500: 104 117 137;
+    --brand-600: 51 65 85;
+    --brand-700: 30 41 59;
+    --brand-800: 15 23 42;
+    --brand-900: 2 6 23;
   }
   .dark {
     color-scheme: dark;
@@ -104,6 +116,16 @@ html.desktop-app .h-screen {
     --slate-900: 15 23 42;
     --slate-950: 2 6 23;
     --chart-mark: 255 255 255;
+    --brand-50: 27 35 51;
+    --brand-100: 33 42 60;
+    --brand-200: 43 53 71;
+    --brand-300: 72 86 111;
+    --brand-400: 124 137 158;
+    --brand-500: 154 165 180;
+    --brand-600: 196 203 214;
+    --brand-700: 224 228 234;
+    --brand-800: 238 240 244;
+    --brand-900: 247 248 250;
   }
   html {
     -webkit-font-smoothing: antialiased;

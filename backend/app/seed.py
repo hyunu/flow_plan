@@ -472,12 +472,8 @@ def polish_demo_project(builder: P, today: date, *, behind: bool = False) -> Non
     db.flush()
 
 
-def seed(db: Session) -> None:
-    ensure_schema()
-    Base.metadata.create_all(bind=engine)
-    # 기존에 시드된 데이터가 있는지 (첫 실행인지 여부)
-    existing = db.query(User).count() > 0
-
+def ensure_roles(db: Session) -> dict[str, Role]:
+    """역할·기본 권한만 보장. 데모 계정은 만들지 않는다."""
     roles: dict[str, Role] = {}
     for name, desc in ROLES:
         r = db.query(Role).filter_by(name=name).first()
@@ -487,7 +483,6 @@ def seed(db: Session) -> None:
         roles[name] = r
     db.flush()
 
-    # 역할별 기본 권한 반영 (신규 역할 생성 또는 권한이 비어 있는 경우)
     def _perms_raw(r: Role) -> bool:
         try:
             return bool(json.loads(r.permissions or "[]"))
@@ -502,6 +497,15 @@ def seed(db: Session) -> None:
             perms_changed = True
     if perms_changed:
         db.commit()
+    return roles
+
+
+def seed(db: Session) -> None:
+    ensure_schema()
+    Base.metadata.create_all(bind=engine)
+    # 기존에 시드된 데이터가 있는지 (첫 실행인지 여부)
+    existing = db.query(User).count() > 0
+    roles = ensure_roles(db)
 
     if existing:
         print("이미 데이터가 존재합니다. (역할별 기본 권한만 반영됨) 초기화하려면 backend/data/flow_plan.db 를 삭제 후 재실행하세요.")

@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { http } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { useDisplay } from '../auth/DisplayContext'
+import { isDarkHex } from '../lib/displayPrefs'
 import type { Notification } from '../api/types'
 import { useDesktopWin } from './DesktopChrome'
 import { RichText } from './RichText'
@@ -66,7 +68,10 @@ const roleLabel: Record<string, string> = {
 
 export function Layout() {
   const { user, logout } = useAuth()
+  const { prefs } = useDisplay()
   const { desk, hide, startMove } = useDesktopWin()
+  const sidebarBg = prefs.colors.sidebar || '#0a0a0a'
+  const sbDark = isDarkHex(sidebarBg)
   const navigate = useNavigate()
   const location = useLocation()
   const notifBoxRef = useRef<HTMLDivElement>(null)
@@ -113,6 +118,12 @@ export function Layout() {
   }, [])
 
   useEffect(() => {
+    const clear = () => setTip(null)
+    window.addEventListener('flowplan-hover-reset', clear)
+    return () => window.removeEventListener('flowplan-hover-reset', clear)
+  }, [])
+
+  useEffect(() => {
     setShowNotifs(false)
   }, [location.pathname])
 
@@ -135,39 +146,42 @@ export function Layout() {
   const unread = notifs.filter((n) => !n.is_read).length
   const roleName = user?.role_name || ''
 
-const navLinkCls = ({ isActive }: { isActive: boolean }) =>
-  `group relative flex items-center rounded-xl text-sm font-medium transition-all ${
-    collapsed ? 'justify-center w-11 h-11 mx-auto' : 'gap-3 px-3 py-2.5'
-  } ${
-    isActive
-      ? 'bg-white/20 text-white shadow-inner ring-1 ring-white/15'
-      : 'hover:bg-white/5 hover:text-white/80'
-  } ${
-    isActive && !collapsed
-      ? "after:content-[''] after:absolute after:left-0 after:top-1/2 after:-translate-y-1/2 after:w-[3px] after:h-5 after:rounded-full after:bg-white after:shadow-[0_0_8px_rgba(255,255,255,0.6)]"
-      : ''
-  }`
+  const navLinkCls = ({ isActive }: { isActive: boolean }) =>
+    `group relative flex items-center rounded-xl text-sm font-medium transition-all ${
+      collapsed ? 'justify-center w-11 h-11 mx-auto' : 'gap-3 px-3 py-2.5'
+    } ${
+      isActive
+        ? sbDark
+          ? 'bg-white/20 text-white shadow-inner ring-1 ring-white/15'
+          : 'bg-black/10 text-ink-900 shadow-inner ring-1 ring-black/10'
+        : sbDark
+          ? 'hover:bg-white/5 hover:text-white/80'
+          : 'hover:bg-black/5 hover:text-ink-800'
+    }`
 
   const sectionTitle = (text: string) =>
     collapsed ? (
       <div className="h-2" />
     ) : (
-      <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-white/40">{text}</div>
+      <div className={`px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider ${sbDark ? 'text-white/40' : 'text-slate-400'}`}>{text}</div>
     )
 
   return (
     <div className="min-h-screen h-full flex">
       {/* Sidebar — 데스크톱: 고정 / 모바일: 햄버거로 여는 오버레이 드로어 */}
       <aside
-        className={`relative bg-black text-white/45 flex-col shrink-0 sticky top-0 h-full self-stretch transition-all duration-200 ${
+        className={`relative flex-col shrink-0 sticky top-0 h-full self-stretch transition-all duration-200 ${
+          sbDark ? 'text-white/45' : 'text-slate-500'
+        } ${
           mobileNav
             ? 'fixed inset-y-0 left-0 z-50 flex w-44 shadow-2xl'
             : `hidden lg:flex ${collapsed ? 'w-[68px]' : 'w-44'}`
         }`}
+        style={{ background: sidebarBg }}
       >
         {/* 헤더: 로고 */}
         <div
-          className={`desktop-drag relative z-20 h-16 flex items-center border-b border-white/5 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-4'}`}
+          className={`desktop-drag relative z-20 h-16 flex items-center border-b ${sbDark ? 'border-white/5' : 'border-black/10'} ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-4'}`}
           onPointerDown={desk ? startMove : undefined}
         >
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500 grid place-items-center text-white font-bold text-sm shadow-lg shadow-brand-900/30 shrink-0">
@@ -175,7 +189,7 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
           </div>
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <div className="text-white font-semibold text-[15px] leading-tight">Flow Plan</div>
+              <div className={`font-semibold text-[15px] leading-tight ${sbDark ? 'text-white' : 'text-ink-900'}`}>Flow Plan</div>
               <div className="text-[11px] text-slate-500 leading-tight truncate">프로젝트 리스크 관리</div>
             </div>
           )}
@@ -217,21 +231,21 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
               onFocus={(e) => showTip(e, label)}
               onBlur={hideTip}
             >
-              <Icon size={18} className="shrink-0 text-white/40 group-hover:text-white/80" />
+              <Icon size={18} className={`shrink-0 ${sbDark ? 'text-white/40 group-hover:text-white/80' : 'text-slate-400 group-hover:text-ink-700'}`} />
               {!collapsed && label}
             </NavLink>
           ))}
         </nav>
 
         {/* 하단 사용자 */}
-        <div className={`py-4 border-t border-white/5 space-y-3 ${collapsed ? 'px-2' : 'px-4'}`}>
+        <div className={`py-4 border-t space-y-3 ${sbDark ? 'border-white/5' : 'border-black/10'} ${collapsed ? 'px-2' : 'px-4'}`}>
           <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3 px-1'}`}>
             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-600 to-slate-800 ring-1 ring-white/10 grid place-items-center text-white text-sm font-semibold shrink-0">
               {user?.name?.slice(0, 1)}
             </div>
             {!collapsed && (
               <div className="min-w-0 flex-1">
-                <div className="text-sm text-white font-medium truncate">{user?.name}</div>
+                <div className={`text-sm font-medium truncate ${sbDark ? 'text-white' : 'text-ink-900'}`}>{user?.name}</div>
                 <span
                   title={roleName}
                   className={`badge mt-0.5 max-w-full truncate ring-1 ${roleTone[roleName] || 'bg-white/10 text-white/75 ring-white/10'}`}
@@ -247,9 +261,9 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
             onMouseLeave={hideTip}
             onFocus={(e) => showTip(e, '로그아웃')}
             onBlur={hideTip}
-            className={`group relative flex items-center rounded-lg text-[13px] text-white/45 hover:text-white hover:bg-white/5 w-full transition-colors ${
-              collapsed ? 'justify-center w-11 h-10 mx-auto' : 'gap-2.5 px-3 py-2'
-            }`}
+            className={`group relative flex items-center rounded-lg text-[13px] w-full transition-colors ${
+              sbDark ? 'text-white/45 hover:text-white hover:bg-white/5' : 'text-slate-500 hover:text-ink-900 hover:bg-black/5'
+            } ${collapsed ? 'justify-center w-11 h-10 mx-auto' : 'gap-2.5 px-3 py-2'}`}
           >
             <IconLogout size={15} className="shrink-0" />
             {!collapsed && '로그아웃'}
@@ -424,8 +438,15 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
             {desk && (
               <button
                 type="button"
-                onClick={hide}
-                className="desktop-no-drag ml-1 p-1.5 rounded-lg text-slate-400 hover:bg-red-500 hover:text-white transition-colors"
+                onPointerDown={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  hide()
+                }}
+                className="desktop-no-drag relative z-50 ml-1 p-1.5 rounded-lg text-slate-400 hover:bg-red-500 hover:text-white transition-colors"
                 title="창 숨기기"
                 aria-label="창 숨기기"
               >
