@@ -46,7 +46,7 @@ export function Login() {
           </h1>
           <ul className="space-y-2 text-slate-400 text-sm">
             <li>· Baseline / Current / Actual 3중 일정 관리</li>
-            <li>· Critical Path 자동 분석</li>
+            <li>· 크리티컬 패스 자동 분석</li>
             <li>· 지연 원인 · 대책 수집 및 일일 Challenge</li>
           </ul>
         </div>

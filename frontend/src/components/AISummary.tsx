@@ -1,39 +1,23 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Badge } from './ui'
+import { RichText } from './RichText'
 
-interface RiskItem {
+interface LineItem {
   task_id?: number | string
   task_title?: string
-  risk?: string
-  description?: string
-  type?: string
-  severity?: string
-}
-
-interface RecItem {
-  task_id?: number | string
-  task_title?: string
-  action?: string
   text?: string
+  tone?: string
+  impact_days?: number
 }
 
 interface RiskData {
-  overall_risk?: string
-  risks?: RiskItem[]
-  recommendations?: (string | RecItem)[]
-}
-
-const typeLabel: Record<string, string> = {
-  system_calc: '시스템 계산',
-  user_opinion: '사용자 의견',
-  ai_prediction: 'AI 예측',
-}
-
-const typeTone: Record<string, string> = {
-  system_calc: 'blue',
-  user_opinion: 'amber',
-  ai_prediction: 'violet',
+  brief?: string
+  needs_detail?: boolean
+  problems?: LineItem[]
+  remedies?: LineItem[]
+  audience_label?: string
+  for_you?: LineItem[]
 }
 
 function toId(v?: number | string | null): number | null {
@@ -95,23 +79,34 @@ function linkifyTasks(text: string, catalog: { id: number; title: string }[]): R
   return nodes.length ? nodes : text
 }
 
-function RecLine({ rec, catalog }: { rec: string | RecItem; catalog: { id: number; title: string }[] }) {
-  if (typeof rec === 'string') return <>{linkifyTasks(rec, catalog)}</>
-  const id = toId(rec.task_id)
-  const action = rec.action || rec.text || ''
-  if (id != null) {
-    return (
-      <>
-        <TaskNameLink id={id}>{rec.task_title || `#${id}`}</TaskNameLink>
-        {action ? ` — ${action}` : ''}
-      </>
-    )
-  }
-  const raw = [rec.task_title, action].filter(Boolean).join(' — ')
-  return <>{linkifyTasks(raw, catalog)}</>
+function Line({ item, catalog }: { item: LineItem; catalog: { id: number; title: string }[] }) {
+  const id = toId(item.task_id)
+  return (
+    <span>
+      {typeof item.impact_days === 'number' && item.impact_days > 0 && (
+        <Badge tone="red">이 노드 → 전체 +{item.impact_days}일</Badge>
+      )}
+      {item.task_title && id != null ? (
+        <>
+          {' '}
+          <TaskNameLink id={id}>{item.task_title}</TaskNameLink>
+          {item.text ? (
+            <>
+              {' — '}
+              <RichText text={item.text} />
+            </>
+          ) : (
+            ''
+          )}
+        </>
+      ) : (
+        <> <RichText text={item.text || ''} /></>
+      )}
+    </span>
+  )
 }
 
-/** AI 위험 분석 결과(JSON)를 읽기 좋게 렌더링. JSON이 아니면 원문 표시. */
+/** 한두 줄 전체 요약. 문제가 있을 때만 문제점·개선책과 개인 경고를 펼친다. */
 export function AISummary({
   content,
   tasks = [],
@@ -119,6 +114,7 @@ export function AISummary({
   content: string
   tasks?: { id: number; title: string }[]
 }) {
+  const [open, setOpen] = useState(false)
   let data: RiskData | null = null
   try {
     data = JSON.parse(content)
@@ -126,85 +122,86 @@ export function AISummary({
     data = null
   }
 
-  const structured = data && (data.overall_risk || (data.risks && data.risks.length > 0))
-  const catalog = [
-    ...tasks,
-    ...(data?.risks ?? [])
-      .map((r) => ({ id: toId(r.task_id), title: r.task_title || '' }))
-      .filter((x): x is { id: number; title: string } => x.id != null && !!x.title),
-  ]
-
-  if (!structured) {
+  if (!data?.brief && !(data?.for_you?.length)) {
     return (
       <div
         className="ai-summary text-[13px] leading-relaxed text-ink-700 whitespace-pre-wrap"
         style={{ fontFamily: 'LGSmart, sans-serif' }}
       >
-        {linkifyTasks(content, catalog)}
+        {linkifyTasks(content, tasks)}
       </div>
     )
   }
 
-  const risk = data!.overall_risk || 'NORMAL'
-  const riskTone = risk === 'HIGH' ? 'red' : risk === 'WARNING' ? 'amber' : 'green'
+  const problems = data?.problems ?? []
+  const remedies = data?.remedies ?? []
+  const mine = data?.for_you ?? []
+  const canExpand = Boolean(data?.needs_detail && (problems.length || remedies.length || mine.length))
 
   return (
-    <div className="ai-summary space-y-4" style={{ fontFamily: 'LGSmart, sans-serif' }}>
-      <div className="flex items-center gap-3">
-        <span className="text-[13px] text-slate-500">전반 위험도</span>
-        <Badge tone={riskTone}>{risk}</Badge>
-      </div>
-
-      {data!.risks && data!.risks.length > 0 && (
-        <div>
-          <div className="text-[12px] font-semibold text-slate-400 mb-2">위험 요소</div>
-          <ul className="space-y-2">
-            {data!.risks!.map((r, i) => {
-              const id = toId(r.task_id)
-              return (
-                <li key={i} className="flex items-start gap-2">
-                  <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[13px] text-ink-700 leading-snug">
-                      {r.type && (
-                        <Badge tone={typeTone[r.type] || 'slate'}>{typeLabel[r.type] || r.type}</Badge>
-                      )}
-                      {r.task_title ? (
-                        <>
-                          {' '}
-                          {id != null ? (
-                            <TaskNameLink id={id}>{r.task_title}</TaskNameLink>
-                          ) : (
-                            <span className="font-medium">{r.task_title}</span>
-                          )}
-                          {id != null && <span className="text-slate-400 text-[11px]"> #{id}</span>}
-                          {r.risk || r.description ? ` — ${r.risk || r.description}` : ''}
-                        </>
-                      ) : (
-                        linkifyTasks(r.risk || r.description || '', catalog)
-                      )}
-                    </div>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
+    <div className="ai-summary space-y-3" style={{ fontFamily: 'LGSmart, sans-serif' }}>
+      {data?.brief && (
+        <p className="text-[14px] text-ink-800 leading-relaxed">
+          <RichText text={data.brief} />
+        </p>
       )}
 
-      {data!.recommendations && data!.recommendations.length > 0 && (
-        <div>
-          <div className="text-[12px] font-semibold text-slate-400 mb-2">권장 대책</div>
-          <ul className="space-y-1.5">
-            {data!.recommendations!.map((r, i) => (
-              <li key={i} className="flex items-start gap-2 text-[13px] text-ink-700 leading-snug">
-                <span className="mt-0.5 text-brand-500 font-bold shrink-0">✓</span>
-                <span className="min-w-0">
-                  <RecLine rec={r} catalog={catalog} />
-                </span>
-              </li>
-            ))}
-          </ul>
+      {canExpand && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="text-[12px] font-semibold text-brand-600 hover:text-brand-700"
+        >
+          {open ? '간단히' : '문제점·개선책 자세히'}
+        </button>
+      )}
+
+      {open && (
+        <div className="space-y-4 pt-1">
+          {problems.length > 0 && (
+            <div>
+              <div className="text-[12px] font-semibold text-slate-500 mb-1.5">문제점</div>
+              <ul className="space-y-2">
+                {problems.map((item, i) => (
+                  <li key={i} className="text-[13px] text-ink-700 leading-relaxed">
+                    <Line item={item} catalog={tasks} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {remedies.length > 0 && (
+            <div>
+              <div className="text-[12px] font-semibold text-slate-500 mb-1.5">개선책</div>
+              <ul className="space-y-2">
+                {remedies.map((item, i) => (
+                  <li key={i} className="text-[13px] text-ink-700 leading-relaxed">
+                    <span className="text-brand-500 font-bold mr-1">→</span>
+                    <Line item={item} catalog={tasks} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {mine.length > 0 && (
+            <div>
+              <div className="text-[12px] font-semibold text-slate-500 mb-1.5">
+                {data?.audience_label || '이 계정'}
+              </div>
+              <ul className="space-y-2">
+                {mine.map((item, i) => (
+                  <li
+                    key={i}
+                    className={`text-[13px] leading-relaxed ${
+                      item.tone === 'critical' ? 'text-red-800' : item.tone === 'warning' ? 'text-amber-900' : 'text-ink-700'
+                    }`}
+                  >
+                    <Line item={item} catalog={tasks} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>

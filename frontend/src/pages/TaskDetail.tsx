@@ -1,12 +1,35 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { http } from '../api/client'
 import type { Group, ProgressUpdate, ScheduleChange, Task } from '../api/types'
 import { useCan } from '../auth/AuthContext'
 import { TaskFormModal } from '../components/TaskFormModal'
 import { IconArrowLeft, IconClock, IconFlag, IconHistory, IconLink, IconUser } from '../components/icons'
-import { Badge, ProgressBar, StatusBadge } from '../components/ui'
+import { Badge, InfoTip, ProgressBar, StatusBadge } from '../components/ui'
 import { SkeletonCard, SkeletonRow, SkeletonText } from '../components/Skeleton'
+
+const CardHead = ({
+  icon,
+  title,
+  hint,
+  extra,
+  className = 'mb-4',
+}: {
+  icon?: ReactNode
+  title: string
+  hint: string
+  extra?: ReactNode
+  className?: string
+}) => (
+  <>
+    <div className={`flex items-center gap-2 ${className}`}>
+      {icon}
+      <h3 className="text-sm font-semibold text-ink-900">{title}</h3>
+      {extra}
+    </div>
+    <InfoTip text={hint} corner />
+  </>
+)
 
 const MetaItem = ({ label, value }: { label: string; value: string }) => (
   <div className="min-w-0">
@@ -182,10 +205,30 @@ export function TaskDetail() {
   ]
 
   const progressValues = [
-    { label: 'Schedule', v: task.schedule_progress, sub: '일정 기준 자동' },
-    { label: 'Work', v: task.work_progress, sub: '작업량 기준' },
-    { label: 'User Adj', v: task.user_adjustment, sub: '사용자 보정' },
-    { label: 'Effective', v: task.effective_progress, sub: '최종' },
+    {
+      label: 'Schedule',
+      v: task.schedule_progress,
+      sub: '일정 기준 자동',
+      hint: '계획 시작~종료 작업일 기준으로, 오늘까지 진행됐어야 할 비율입니다. 실제 완료 여부와 무관하게 시간 경과만으로 계산됩니다.',
+    },
+    {
+      label: 'Work',
+      v: task.work_progress,
+      sub: '작업량 기준',
+      hint: '배정된 작업량(시간) 대비 진행한 비율입니다. 하위 태스크가 있으면 자식 작업량을 합산해 계산합니다.',
+    },
+    {
+      label: 'User Adj',
+      v: task.user_adjustment,
+      sub: '사용자 보정',
+      hint: '담당자가 직접 가감한 보정값(%p)입니다. 일정·작업량 자동 계산과 별도로 Effective에 더해집니다.',
+    },
+    {
+      label: 'Effective',
+      v: task.effective_progress,
+      sub: '최종',
+      hint: '화면에 쓰는 최종 진척률입니다. 작업량 진척에 사용자 보정을 반영한 값이며, S-Curve 실제선과 예측에 사용됩니다.',
+    },
   ]
 
   const assigneeNames = task.assignments.map((a) => a.user_name).filter(Boolean).join(', ')
@@ -226,7 +269,7 @@ export function TaskDetail() {
                 {task.title}
               </h1>
               <StatusBadge status={task.status} />
-              {task.is_critical && <Badge tone="red">Critical Path</Badge>}
+              {task.is_critical && <Badge tone="red">크리티컬 패스</Badge>}
               {delay ? <Badge tone="red">지연 {task.delay_days}일</Badge> : <Badge tone="green">정상 진행</Badge>}
               <span className="text-xs text-slate-300">#{task.id}</span>
             </div>
@@ -245,11 +288,15 @@ export function TaskDetail() {
             <MetaItem label="예상 완료" value={task.forecast_finish?.slice(0, 10) || task.plan_end?.slice(0, 10) || '-'} />
           </div>
         </div>
+        <InfoTip
+          corner
+          text="이 태스크의 상태·일정·작업량 요약입니다. 크리티컬 패스면 프로젝트 완료일에 영향을 주고, 지연일은 예측 종료가 계획보다 늦은 일수입니다."
+        />
       </div>
 
       {/* 진척률 스탯 스트립 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {progressValues.map(({ label, v, sub }) => (
+        {progressValues.map(({ label, v, sub, hint }) => (
           <div key={label} className="card px-4 py-3.5">
             <div className="flex items-baseline justify-between gap-2">
               <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{label}</div>
@@ -261,7 +308,8 @@ export function TaskDetail() {
                 style={{ width: `${Math.min(100, Math.max(0, v))}%` }}
               />
             </div>
-            <div className="text-[11px] text-slate-400 mt-1.5">{sub}</div>
+            <div className="text-[11px] text-slate-400 mt-1.5 pr-6">{sub}</div>
+            <InfoTip text={hint} corner />
           </div>
         ))}
       </div>
@@ -273,10 +321,12 @@ export function TaskDetail() {
           <div className="grid lg:grid-cols-2 gap-6 items-stretch">
             {/* 일정 비교 */}
             <div className="card px-4 py-3">
-              <div className="flex items-center gap-1.5 mb-2">
-                <IconClock size={14} className="text-slate-400" />
-                <h3 className="text-sm font-semibold text-ink-900">일정 비교</h3>
-              </div>
+              <CardHead
+                className="mb-2"
+                icon={<IconClock size={14} className="text-slate-400" />}
+                title="일정 비교"
+                hint="Baseline은 최초 확정 일정(여기서 바꿀 수 없음), Current Plan은 지금 계획, Actual은 실제 착수·종료, Forecast는 현재 진척으로 예상한 종료일입니다."
+              />
               <div>
                 {scheduleRows.map((r) => (
                   <div key={r.label} className="flex items-center gap-2.5 py-1.5 px-1 rounded-md hover:bg-surface-50 transition-colors">
@@ -297,11 +347,12 @@ export function TaskDetail() {
             {/* 일정·상태 편집 */}
             {(canEditSchedule || canUpdateProgress) ? (
               <div id="edit" className="card p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <IconClock size={15} className="text-slate-400" />
-                  <h3 className="text-sm font-semibold text-ink-900">일정·상태 편집</h3>
-                  <span className="text-[11px] text-slate-400">변경 이력에 기록됩니다</span>
-                </div>
+                <CardHead
+                  icon={<IconClock size={15} className="text-slate-400" />}
+                  title="일정·상태 편집"
+                  hint="계획일·실제일·작업량·상태를 수정합니다. 저장하면 변경 이력에 남습니다. 일정 편집과 진척 입력 권한에 따라 수정 가능한 항목이 다릅니다."
+                  extra={<span className="text-[11px] text-slate-400">변경 이력에 기록됩니다</span>}
+                />
                 <form onSubmit={saveEdit} className="grid grid-cols-2 gap-3 items-end">
                   <div>
                     <label className="label">계획 시작일</label>
@@ -347,10 +398,12 @@ export function TaskDetail() {
           {/* 진척률 보정 */}
           <div className="card p-6">
             <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <IconFlag size={15} className="text-slate-400" />
-                <h3 className="text-sm font-semibold text-ink-900">진척률 보정</h3>
-              </div>
+              <CardHead
+                className="mb-0"
+                icon={<IconFlag size={15} className="text-slate-400" />}
+                title="진척률 보정"
+                hint="최종 진척(Effective)과 사용자 보정(User Adjustment)을 직접 입력합니다. 일정 엔진이 계산한 Schedule 진척과 다를 수 있으며, 저장 즉시 예측·S-Curve에 반영됩니다."
+              />
               <span className="text-lg font-bold text-ink-900 tabular-nums">{Math.round(task.effective_progress)}%</span>
             </div>
             <ProgressBar value={task.effective_progress} />
@@ -393,7 +446,10 @@ export function TaskDetail() {
           {tab === 'progress' && (
             <div className="grid lg:grid-cols-2 gap-6">
               <div className="card p-6">
-                <h3 className="text-sm font-semibold text-ink-900 mb-4">진행 기록 입력</h3>
+                <CardHead
+                  title="진행 기록 입력"
+                  hint="수행 내용·현재 상황·문제·지연 원인·대책을 남깁니다. 지연 원인과 예상 추가 일수는 예측 지연과 리스크 요약에 반영됩니다."
+                />
                 {canUpdateProgress ? (
                 <form onSubmit={addProgress} className="space-y-3">
                   <div>
@@ -477,7 +533,11 @@ export function TaskDetail() {
           {tab === 'history' && (
             <div className="card overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-100">
-                <h3 className="text-sm font-semibold text-ink-900">일정 변경 이력</h3>
+                <CardHead
+                  className="mb-0"
+                  title="일정 변경 이력"
+                  hint="계획 종료일이나 작업량이 바뀔 때마다 자동 기록됩니다. 변경 전·후 값과 사유를 확인할 수 있습니다."
+                />
               </div>
               {history.length === 0 ? (
                 <div className="p-10 text-center text-sm text-slate-400">변경 이력 없음</div>
@@ -520,10 +580,11 @@ export function TaskDetail() {
         {/* 우측: 담당자 / 하위 Task */}
         <div className="xl:col-span-1 space-y-6 min-w-0">
           <div className="card p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <IconUser size={15} className="text-slate-400" />
-              <h3 className="text-sm font-semibold text-ink-900">담당자</h3>
-            </div>
+            <CardHead
+              icon={<IconUser size={15} className="text-slate-400" />}
+              title="담당자"
+              hint="이 태스크에 배정된 사람과 배정 시간입니다. 여러 명을 넣을 수 있고, 마지막 한 명은 삭제할 수 없습니다."
+            />
             {task.assignments.length === 0 ? (
               <div className="text-sm text-slate-400 py-2">담당자 없음</div>
             ) : (
@@ -570,10 +631,12 @@ export function TaskDetail() {
 
           <div className="card p-6">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <IconLink size={15} className="text-slate-400" />
-                <h3 className="text-sm font-semibold text-ink-900">하위 Task</h3>
-              </div>
+              <CardHead
+                className="mb-0"
+                icon={<IconLink size={15} className="text-slate-400" />}
+                title="하위 Task"
+                hint="이 태스크 아래의 자식 작업입니다. 부모 진척은 자식 작업량을 합산해 계산됩니다. 항목을 누르면 해당 상세로 이동합니다."
+              />
               {can('task.create') && (
               <button onClick={() => setShowAddChild(true)} className="btn-secondary !py-1.5 !px-3 text-xs">
                 + 하위 Task 추가

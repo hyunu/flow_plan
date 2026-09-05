@@ -1,3 +1,4 @@
+import json
 import threading
 from datetime import date, timedelta
 
@@ -15,7 +16,7 @@ from app.models.entities import (
     Task,
     User,
 )
-from app.services.ai_service import build_project_facts
+from app.services.ai_service import personalize_risk_summary
 from app.services.schedule_service import compute_project_schedule, upsert_progress_snapshot
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -99,9 +100,33 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
     ).order_by(ScheduleChange.changed_at.desc()).limit(10).all()
 
     latest_analysis = db.query(AIAnalysis).filter_by(project_id=project.id, analysis_type="risk").order_by(AIAnalysis.created_at.desc()).first()
-    if not latest_analysis:
+    needs_ai = latest_analysis is None
+    if latest_analysis:
+        try:
+            parsed = json.loads(latest_analysis.content)
+            needs_ai = not isinstance(parsed, dict) or not (parsed.get("headline") or parsed.get("situation"))
+        except Exception:
+            needs_ai = True
+    if needs_ai:
         # 응답 지연 방지: 백그라운드에서 생성 (다음 조회 시 반영)
         threading.Thread(target=_generate_risk_async, args=(project.id,), daemon=True).start()
+
+    my_task_ids = {
+        t.id
+        for t in db.query(Task).filter_by(project_id=project.id, is_deleted=False).all()
+        if any(a.user_id == user.id for a in t.assignments)
+    }
+    ai_summary = personalize_risk_summary(
+        latest_analysis.content if latest_analysis else None,
+        user=user,
+        result=result,
+        my_task_ids=my_task_ids,
+        role_name=user.role.name if user.role else "",
+        delayed=delayed,
+        critical=critical,
+        issues=issues,
+        user_load=list(user_load.values()),
+    )
 
     return {
         "project_name": project.name,
@@ -142,5 +167,5 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
              "before_end": c.before_end, "after_end": c.after_end}
             for c in recent_changes
         ],
-        "ai_summary": latest_analysis.content if latest_analysis else None,
+        "ai_summary": ai_summary,
     }

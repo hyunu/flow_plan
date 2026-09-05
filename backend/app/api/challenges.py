@@ -11,15 +11,27 @@ from app.services.ai_service import generate_user_challenges
 router = APIRouter(prefix="/challenges", tags=["challenges"])
 
 
+def _is_stub_message(text: str | None) -> bool:
+    t = text or ""
+    return t.startswith("[Mock") or "요청 맥락:" in t or "Daily Challenge 한 문장" in t
+
+
 @router.get("", response_model=list[ChallengeRead])
 def list_my_challenges(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return db.query(Challenge).filter_by(user_id=user.id).order_by(Challenge.created_at.desc()).all()
+    rows = db.query(Challenge).filter_by(user_id=user.id).order_by(Challenge.created_at.desc()).all()
+    if any(
+        _is_stub_message(c.message) or (c.status == "open" and "**" not in (c.message or ""))
+        for c in rows
+    ):
+        generate_user_challenges(db, user)
+        rows = db.query(Challenge).filter_by(user_id=user.id).order_by(Challenge.created_at.desc()).all()
+    return rows
 
 
 @router.post("/generate", response_model=list[ChallengeRead], dependencies=[Depends(rate_limit(10, 300, "ai"))])
 def generate_challenges(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    challenges = generate_user_challenges(db, user)
-    return challenges
+    generate_user_challenges(db, user)
+    return db.query(Challenge).filter_by(user_id=user.id).order_by(Challenge.created_at.desc()).all()
 
 
 @router.get("/{challenge_id}", response_model=ChallengeRead)

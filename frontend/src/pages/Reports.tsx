@@ -3,6 +3,7 @@ import { http } from '../api/client'
 import type { DailyReport, Project } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { IconMail, IconReport } from '../components/icons'
+import { CopyMarkdownButton, MarkdownView } from '../components/MarkdownView'
 
 interface WeeklyReport {
   id: number
@@ -10,6 +11,38 @@ interface WeeklyReport {
   week_start: string
   content: string
   created_at: string
+}
+
+function ReportCard({
+  kicker,
+  title,
+  when,
+  content,
+  featured,
+}: {
+  kicker: string
+  title: string
+  when?: string
+  content: string
+  featured?: boolean
+}) {
+  return (
+    <article className={`card overflow-hidden ${featured ? 'ring-1 ring-brand-100' : ''}`}>
+      <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-surface-50/80 to-white">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="badge bg-ink-900 text-white">{kicker}</span>
+            <h2 className="text-[15px] font-bold text-ink-900 truncate">{title}</h2>
+          </div>
+          {when && <div className="text-[11px] text-slate-400 mt-0.5">{when}</div>}
+        </div>
+        <CopyMarkdownButton text={content} />
+      </div>
+      <div className="px-5 py-4">
+        <MarkdownView markdown={content} />
+      </div>
+    </article>
+  )
 }
 
 export function Reports() {
@@ -76,7 +109,7 @@ export function Reports() {
     setSendMsg(null)
     try {
       const r = await http.post<{ sent: number; recipients: string[] }>('/reports/daily/send')
-      setSendMsg({ ok: true, text: `${r.sent}명의 개발자에게 데일리 리포트를 이메일 발송했습니다.` })
+      setSendMsg({ ok: true, text: `${r.sent}명에게 일일 리포트를 보냈습니다.` })
       loadDaily()
     } catch (e) {
       setSendMsg({ ok: false, text: e instanceof Error ? e.message : '발송 실패' })
@@ -91,7 +124,7 @@ export function Reports() {
     setSendMsg(null)
     try {
       const r = await http.post<{ sent: number; recipients: string[] }>(`/reports/weekly/send/${selProject}`)
-      setSendMsg({ ok: true, text: `${r.sent}명의 관리자에게 위클리 리포트를 이메일 발송했습니다.` })
+      setSendMsg({ ok: true, text: `${r.sent}명에게 주간 리포트를 보냈습니다.` })
       loadWeekly(selProject)
     } catch (e) {
       setSendMsg({ ok: false, text: e instanceof Error ? e.message : '발송 실패' })
@@ -100,117 +133,138 @@ export function Reports() {
     }
   }
 
+  const list = tab === 'daily' ? daily : weekly
+  const selName = projects.find((p) => p.id === selProject)?.name
+
   return (
-    <div className="max-w-4xl mx-auto space-y-5 animate-fade-in">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-100 grid place-items-center">
-          <IconReport size={19} />
+    <div className="max-w-5xl mx-auto space-y-5 animate-fade-in pb-12">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-violet-500 text-white grid place-items-center shadow-sm">
+            <IconReport size={18} />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-ink-900">리포트</h1>
+            <p className="text-[13px] text-slate-400 mt-0.5">
+              {tab === 'daily' ? '오늘 할 일과 지연을 한눈에' : '프로젝트 한 주의 일정 상태'}
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-xl font-bold text-ink-900">리포트</h1>
-          <p className="text-[13px] text-slate-400 mt-0.5">일일 / 주간 보고서</p>
-        </div>
-      </div>
-
-      <div className="flex gap-1 border-b border-slate-200">
-        {([
-          ['daily', '내 Daily Report'],
-          ['weekly', '관리자 Weekly Report'],
-        ] as const).map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === key ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-400 hover:text-slate-600'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'daily' && (
-        <>
-          <div className="flex justify-end gap-2">
-            {canSend && (
-              <button className="btn-secondary" onClick={sendDaily} disabled={busy}>
-                <IconMail size={15} />
-                {busy ? '발송 중...' : '개발자에게 이메일 발송'}
-              </button>
-            )}
+        <div className="flex items-center gap-2">
+          {tab === 'daily' && canSend && (
+            <button className="btn-secondary" onClick={sendDaily} disabled={busy}>
+              <IconMail size={15} />
+              {busy ? '발송 중...' : '이메일'}
+            </button>
+          )}
+          {tab === 'weekly' && canSend && (
+            <button className="btn-secondary" onClick={sendWeekly} disabled={busy || !selProject}>
+              <IconMail size={15} />
+              {busy ? '발송 중...' : '이메일'}
+            </button>
+          )}
+          {tab === 'daily' ? (
             <button className="btn-primary" onClick={genDaily} disabled={busy}>
-              {busy ? '생성 중...' : '+ Daily Report 생성'}
+              {busy ? '생성 중...' : '오늘 리포트 만들기'}
             </button>
-          </div>
-          {sendMsg && <div className={`card p-3 text-sm ${sendMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>{sendMsg.text}</div>}
-          {daily.length === 0 ? (
-            <div className="card p-14 text-center text-sm text-slate-400">아직 리포트가 없습니다</div>
           ) : (
-            <div className="space-y-4">
-              {daily.map((r) => (
-                <div key={r.id} className="card p-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="font-semibold text-ink-900">{r.report_date} 일일 리포트</span>
-                    <span className="text-xs text-slate-400">{r.created_at?.slice(0, 16).replace('T', ' ')}</span>
-                  </div>
-                  <pre className="text-[13px] leading-relaxed text-slate-600 whitespace-pre-wrap font-sans">{r.content}</pre>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {tab === 'weekly' && (
-        <>
-          <div className="card p-5 flex items-end gap-3">
-            <div className="flex-1">
-              <label className="label">프로젝트</label>
-              <select
-                className="input"
-                value={selProject}
-                onChange={(e) => {
-                  const pid = Number(e.target.value)
-                  setSelProject(pid)
-                  loadWeekly(pid)
-                }}
-              >
-                <option value={0}>선택</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </div>
-            {canSend && (
-              <button className="btn-secondary" onClick={sendWeekly} disabled={busy || !selProject}>
-                <IconMail size={15} />
-                {busy ? '발송 중...' : '관리자에게 이메일 발송'}
-              </button>
-            )}
             <button className="btn-primary" onClick={genWeekly} disabled={busy || !isManager || !selProject}>
-              {busy ? '생성 중...' : '+ Weekly Report 생성'}
+              {busy ? '생성 중...' : '이번 주 리포트 만들기'}
             </button>
-            {!isManager && <div className="text-xs text-slate-400 mb-1">관리자 전용</div>}
-          </div>
-          {sendMsg && <div className={`card p-3 text-sm ${sendMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>{sendMsg.text}</div>}
-
-          {weekly.length === 0 ? (
-            <div className="card p-14 text-center text-sm text-slate-400">주간 리포트가 없습니다</div>
-          ) : (
-            <div className="space-y-4">
-              {weekly.map((r) => (
-                <div key={r.id} className="card p-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="font-semibold text-ink-900">주간 리포트 ({r.week_start} 주)</span>
-                    <span className="text-xs text-slate-400">{r.created_at?.slice(0, 16).replace('T', ' ')}</span>
-                  </div>
-                  <pre className="text-[13px] leading-relaxed text-slate-600 whitespace-pre-wrap font-sans">{r.content}</pre>
-                </div>
-              ))}
-            </div>
           )}
-        </>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="inline-flex p-0.5 rounded-xl bg-surface-100 ring-1 ring-slate-200/80">
+          {([
+            ['daily', '일일', daily.length],
+            ['weekly', '주간', weekly.length],
+          ] as const).map(([key, label, n]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`px-3.5 py-1.5 text-[13px] font-semibold rounded-[10px] transition-colors ${
+                tab === key ? 'bg-white text-ink-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              {label}
+              <span className="ml-1.5 text-[11px] tabular-nums text-slate-400">{n}</span>
+            </button>
+          ))}
+        </div>
+        {tab === 'weekly' && (
+          <select
+            className="input !w-auto min-w-[220px] !py-1.5 text-[13px]"
+            value={selProject}
+            onChange={(e) => {
+              const pid = Number(e.target.value)
+              setSelProject(pid)
+              loadWeekly(pid)
+            }}
+          >
+            <option value={0}>프로젝트 선택</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {sendMsg && (
+        <div
+          className={`rounded-xl px-4 py-2.5 text-[13px] ${
+            sendMsg.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+          }`}
+        >
+          {sendMsg.text}
+        </div>
       )}
+      {tab === 'weekly' && !isManager && (
+        <div className="text-[12px] text-slate-400">주간 리포트 생성은 관리자만 할 수 있습니다.</div>
+      )}
+
+      {list.length === 0 ? (
+        <div className="card px-6 py-16 text-center">
+          <div className="text-3xl mb-2">📄</div>
+          <div className="text-sm font-semibold text-ink-800">아직 리포트가 없습니다</div>
+          <div className="text-[13px] text-slate-400 mt-1">
+            {tab === 'daily' ? '오늘 리포트 만들기' : '이번 주 리포트 만들기'}를 누르면 일정 엔진 숫자로 본문이 채워집니다.
+          </div>
+        </div>
+      ) : tab === 'daily' ? (
+        <div className="space-y-4">
+          {daily.map((r, i) => (
+            <ReportCard
+              key={r.id}
+              kicker="일일"
+              title={r.report_date}
+              when={r.created_at?.slice(0, 16).replace('T', ' ')}
+              content={r.content}
+              featured={i === 0}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {weekly.map((r, i) => (
+            <ReportCard
+              key={r.id}
+              kicker="주간"
+              title={`${r.week_start} 주${selName ? ` · ${selName}` : ''}`}
+              when={r.created_at?.slice(0, 16).replace('T', ' ')}
+              content={r.content}
+              featured={i === 0}
+            />
+          ))}
+        </div>
+      )}
+
+      <p className="text-[11px] text-slate-400 text-right">
+        {tab === 'daily'
+          ? '숫자는 일정 엔진 계산입니다. 담당 Task가 없는 계정은 전체 프로젝트를, 멤버는 자기 담당만 묶습니다.'
+          : '선택한 프로젝트 전체를 일정 엔진 숫자로 정리합니다.'}
+      </p>
     </div>
   )
 }

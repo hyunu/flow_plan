@@ -355,7 +355,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
             <span className="w-3 h-1.5 rounded bg-slate-400/70 ring-1 ring-dashed ring-slate-500" /> 예측
           </span>
           <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
-            <span className="w-3 h-1.5 rounded bg-slate-400 ring-2 ring-ink-900" /> Critical
+            <span className="w-3 h-1.5 rounded bg-slate-400 ring-2 ring-ink-900" /> 크리티컬
           </span>
           </div>
           <div className="flex items-center gap-0.5">

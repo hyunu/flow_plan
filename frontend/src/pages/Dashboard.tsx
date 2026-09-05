@@ -220,7 +220,7 @@ export function Dashboard() {
           sub="진척 기반 전망"
           icon={<IconCalendar size={15} />}
           tone={data.expected_delay_days > 0 ? 'warn' : 'ok'}
-          hint="현재 진척률과 Critical Path(CPM) 계산을 바탕으로 예측한 프로젝트 완료일입니다. 계획 완료일 대비 지연이 예상되면 예상 지연 일수가 표시됩니다."
+          hint="현재 진척률과 크리티컬 패스(CPM) 계산을 바탕으로 예측한 프로젝트 완료일입니다. 계획 완료일 대비 지연이 예상되면 예상 지연 일수가 표시됩니다."
         />
         <StatCard
           label="예상 지연"
@@ -294,7 +294,7 @@ export function Dashboard() {
             <h3 className="text-sm font-semibold text-ink-900">프로젝트 현황 요약</h3>
             <InfoTip
               corner
-              text="프로젝트 데이터(진척·지연·이슈·Critical Path)를 바탕으로 AI가 생성한 현황 요약입니다. 지연 원인, 리스크 항목, 권장 대처 순서를 파악하는 데 활용하세요. 태스크 이름을 누르면 상세로 이동합니다. 결과는 프로젝트별로 저장·재생성됩니다."
+              text="한두 줄로 전체 진척이 계획과 맞는지, 완료가 밀릴지를 말합니다. 문제가 있으면 ‘자세히’에서 원인과 개선책, 로그인한 사람 기준 행동을 펼칩니다. 숫자 나열은 위 카드를 보면 됩니다."
             />
             <Link
               to={`/projects/${projectId}/schedule`}
@@ -356,12 +356,12 @@ export function Dashboard() {
 
         <div className="card p-6">
           <PanelHeader
-            title="Critical Path"
+            title="크리티컬 패스"
             icon={<IconLink size={15} />}
             hint="태스크 의존성을 따라 프로젝트 전체 완료일을 결정하는 임계 경로입니다. 이 경로의 태스크가 늦어지면 프로젝트 종료일이 그만큼 늦어집니다. float(여유일)은 해당 태스크의 시작 지연 여유분(0이면 여유 없음)입니다."
           />
           {data.critical_path.length === 0 ? (
-            <EmptyState>Critical Path Task가 없습니다</EmptyState>
+            <EmptyState>크리티컬 패스 Task가 없습니다</EmptyState>
           ) : (
             <div className="space-y-1">
               {data.critical_path.map((t) => (
@@ -422,7 +422,7 @@ data.issues.length > 0 ? (
           <PanelHeader
             title="사용자별 작업량"
             icon={<IconUser size={15} />}
-            hint="담당자별로 배정된 작업 시간(시간)의 합계입니다. 막대는 최대 부하 담당자를 100%로 한 상대 비율이며, 지연·Critical Path 담당 태스크 수도 함께 표시됩니다."
+            hint="담당자별로 배정된 작업 시간(시간)의 합계입니다. 막대는 최대 부하 담당자를 100%로 한 상대 비율이며, 지연·크리티컬 패스 담당 태스크 수도 함께 표시됩니다."
           />
           <div className="space-y-3">
             {data.user_workload.map((u) => (

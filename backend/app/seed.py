@@ -922,7 +922,7 @@ def seed(db: Session) -> None:
 
     # 챌린지/알림(UI 확인용)
     for user_key, msg, prio, task_id in [
-        ("dev_mes", "Critical Path의 '생산계획 모듈' 지연이 예상됩니다. 지연 원인과 회복 대책을 입력해주세요.", "CRITICAL", plan_m),
+        ("dev_mes", "크리티컬 패스의 '생산계획 모듈' 지연이 예상됩니다. 지연 원인과 회복 대책을 입력해주세요.", "CRITICAL", plan_m),
         ("dev_back", "Issue #13의 해결 예정일이 임박했습니다. 현재 상태를 확인해주세요.", "WARNING", issue),
         ("dev_fe", "최근 3일간 진척률 업데이트가 없습니다. 현재 진행상태를 확인해주세요.", "ATTENTION", fe),
     ]:
