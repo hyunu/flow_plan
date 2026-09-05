@@ -24,6 +24,9 @@ dist/
 # OS
 .DS_Store
 
+# 데스크톱 패키지 중간 산출물 (설치본 dist/ 는 위의 dist/ 규칙으로 제외)
+desktop/build/
+
 # 임시/테스트 산출물
 /tmp/
 *.log
