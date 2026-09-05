@@ -152,7 +152,9 @@ def send_daily_reports(db: Session, today: date | None = None) -> list[str]:
             time.sleep(1.5)  # AI 쿼터 분산(데일리 대량 생성 시)
         _send_one(db, cfg, u.email, f"[Flow Plan] {today.isoformat()} 일일 업무 보고서", md_to_html(report.content))
         db.add(Notification(user_id=u.id, channel="email", type="daily_report",
-                            title="일일 보고서 이메일 발송", body=f"{today.isoformat()} 일일 업무 보고서", link="/reports"))
+                            title="일일 리포트를 메일로 보냈습니다",
+                            body=f"{today.isoformat()} 일일 리포트를 {u.email}로 보냈습니다. 리포트 화면에서 같은 내용을 볼 수 있습니다.",
+                            link="/reports"))
         sent.append(u.email)
     db.commit()
     return sent
@@ -185,7 +187,9 @@ def send_weekly_report(db: Session, project: Project, week_start: date | None = 
     for u in recipients:
         _send_one(db, cfg, u.email, f"[Flow Plan] {project.name} 주간 보고서 ({week_start.isoformat()} 주)", md_to_html(report.content))
         db.add(Notification(user_id=u.id, channel="email", type="weekly_report",
-                            title="주간 보고서 이메일 발송", body=f"{project.name} {week_start.isoformat()} 주", link=f"/reports?project={project.id}"))
+                            title="주간 리포트를 메일로 보냈습니다",
+                            body=f"{project.name} {week_start.isoformat()} 주 리포트를 {u.email}로 보냈습니다.",
+                            link=f"/reports?project={project.id}"))
         sent.append(u.email)
     db.commit()
     return sent

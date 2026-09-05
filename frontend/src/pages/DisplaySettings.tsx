@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useDisplay } from '../auth/DisplayContext'
+import { IconChevronDown } from '../components/icons'
 import { CriticalBadge, DelayMark, ProgressBar, StatusBadge } from '../components/ui'
 import {
   chartColors,
@@ -118,24 +119,72 @@ function PreviewPane() {
   )
 }
 
+function FoldCard({
+  title,
+  desc,
+  open,
+  onToggle,
+  extra,
+  children,
+}: {
+  title: string
+  desc?: string
+  open: boolean
+  onToggle: () => void
+  extra?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section className="card overflow-hidden">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="flex-1 min-w-0 flex items-center gap-3 px-5 py-3.5 text-left hover:bg-surface-50"
+        >
+          <IconChevronDown
+            size={16}
+            className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-0' : '-rotate-90'}`}
+          />
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-ink-900">{title}</span>
+            {desc && <span className="block text-[12px] text-slate-400 mt-0.5">{desc}</span>}
+          </span>
+        </button>
+        {extra && <div className="pr-4 shrink-0">{extra}</div>}
+      </div>
+      {open && <div className="px-5 pb-5 pt-0">{children}</div>}
+    </section>
+  )
+}
+
 export function DisplaySettings() {
   const { prefs, setPrefs, applyPalette, reset } = useDisplay()
-  const [fineTune, setFineTune] = useState(false)
+  const [open, setOpen] = useState({
+    theme: true,
+    style: true,
+    items: true,
+    fine: false,
+    preview: true,
+  })
+  const toggle = (key: keyof typeof open) => setOpen((s) => ({ ...s, [key]: !s[key] }))
   const keys = [...STATUSES, 'critical', 'onTrack'] as const
 
   return (
     <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_19rem] lg:gap-5 lg:items-start space-y-5 lg:space-y-0">
       <div className="space-y-4 min-w-0">
-        <section className="card p-5">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div>
-              <h3 className="text-sm font-semibold text-ink-900">색 테마</h3>
-              <p className="text-[12px] text-slate-400 mt-0.5">한 번 고르면 배지·간트·곡선이 같이 바뀝니다.</p>
-            </div>
+        <FoldCard
+          title="색 테마"
+          desc="한 번 고르면 배지·간트·곡선이 같이 바뀝니다."
+          open={open.theme}
+          onToggle={() => toggle('theme')}
+          extra={
             <button type="button" className="btn-ghost !text-[12px] !px-2 !py-1" onClick={reset}>
               초기화
             </button>
-          </div>
+          }
+        >
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {(Object.keys(PALETTES) as PaletteId[]).map((id) => {
               const p = PALETTES[id]
@@ -164,11 +213,11 @@ export function DisplaySettings() {
               )
             })}
           </div>
-        </section>
+        </FoldCard>
 
-        <section className="card p-5 space-y-5">
-          <h3 className="text-sm font-semibold text-ink-900">어떻게 적을지</h3>
-          <Field title="배지 모양" desc="상태 알림의 모서리">
+        <FoldCard title="표시 방식" desc="배지 모양과 지연·완료 표기" open={open.style} onToggle={() => toggle('style')}>
+          <div className="space-y-5">
+          <Field title="배지 모양" desc="상태 배지의 모서리">
             <Choice<BadgeShape>
               value={prefs.badgeShape}
               onChange={(badgeShape) => setPrefs((p) => ({ ...p, badgeShape }))}
@@ -191,31 +240,31 @@ export function DisplaySettings() {
               ]}
             />
           </Field>
-          <Field title="지연 숫자" desc="3일 늦었을 때">
+          <Field title="지연 표기" desc="3일 늦을 때 어떻게 보여줄지">
             <Choice<DelayFormat>
               value={prefs.delayFormat}
               onChange={(delayFormat) => setPrefs((p) => ({ ...p, delayFormat }))}
               options={[
-                { id: 'plus_days', label: '덧셈', sample: '+3일' },
-                { id: 'word_days', label: '단어', sample: `${prefs.labels.delayed} 3일` },
+                { id: 'plus_days', label: '+N일', sample: '+3일' },
+                { id: 'word_days', label: '지연 N일', sample: `${prefs.labels.delayed} 3일` },
                 { id: 'number_only', label: '숫자만', sample: '3' },
                 { id: 'hidden', label: '숨김', sample: '표시 안 함' },
               ]}
             />
           </Field>
-          <Field title="완료된 작업" desc="끝난 태스크를 어떻게">
+          <Field title="완료 표시" desc="끝난 태스크의 강조">
             <Choice<DoneMark>
               value={prefs.doneMark}
               onChange={(doneMark) => setPrefs((p) => ({ ...p, doneMark }))}
               options={[
                 { id: 'badge', label: '배지만' },
-                { id: 'check', label: '앞에 체크' },
-                { id: 'strike', label: '이름에 줄' },
+                { id: 'check', label: '체크 표시' },
+                { id: 'strike', label: '취소선' },
                 { id: 'muted', label: '흐리게' },
               ]}
             />
           </Field>
-          <Field title="진행 막대 · 밀도" desc="표와 카드의 여백">
+          <Field title="진행 막대 · 밀도" desc="막대 두께와 표·카드 여백">
             <div className="space-y-2">
               <Choice<ProgressStyle>
                 value={prefs.progressStyle}
@@ -237,11 +286,15 @@ export function DisplaySettings() {
               />
             </div>
           </Field>
-        </section>
+          </div>
+        </FoldCard>
 
-        <section className="card p-5">
-          <h3 className="text-sm font-semibold text-ink-900 mb-1">화면에 보일 것</h3>
-          <p className="text-[12px] text-slate-400 mb-3">꺼도 숫자는 그대로입니다. 표시만 숨깁니다.</p>
+        <FoldCard
+          title="표시 항목"
+          desc="끄면 화면에서만 숨깁니다. 일정 숫자는 바뀌지 않습니다."
+          open={open.items}
+          onToggle={() => toggle('items')}
+        >
           <div className="grid sm:grid-cols-2 gap-2">
             {(
               [
@@ -277,22 +330,15 @@ export function DisplaySettings() {
               </label>
             ))}
           </div>
-        </section>
+        </FoldCard>
 
-        <section className="card overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setFineTune((v) => !v)}
-            className="w-full flex items-center justify-between gap-3 px-5 py-3.5 text-left hover:bg-surface-50"
-          >
-            <span>
-              <span className="block text-sm font-semibold text-ink-900">이름과 색 직접 고치기</span>
-              <span className="block text-[12px] text-slate-400 mt-0.5">테마 위에 덮어씁니다. 필요할 때만 여세요.</span>
-            </span>
-            <span className="text-slate-400 text-sm">{fineTune ? '접기' : '열기'}</span>
-          </button>
-          {fineTune && (
-            <div className="px-5 pb-5 space-y-2 border-t border-slate-100 pt-4">
+        <FoldCard
+          title="이름과 색 직접 고치기"
+          desc="테마 위에 덮어씁니다. 필요할 때만 여세요."
+          open={open.fine}
+          onToggle={() => toggle('fine')}
+        >
+          <div className="space-y-2">
               {keys.map((key) => {
                 const meta = ROLE[key]
                 return (
@@ -331,15 +377,19 @@ export function DisplaySettings() {
                   </div>
                 )
               })}
-            </div>
-          )}
-        </section>
+          </div>
+        </FoldCard>
       </div>
 
-      <aside className="lg:sticky lg:top-20 card p-5">
-        <div className="text-sm font-semibold text-ink-900">미리보기</div>
-        <p className="text-[11px] text-slate-400 mt-0.5 mb-4">이 기기 설정입니다. 저장 버튼은 없습니다.</p>
-        <PreviewPane />
+      <aside className="lg:sticky lg:top-20">
+        <FoldCard
+          title="미리보기"
+          desc="이 기기 설정입니다. 저장 버튼은 없습니다."
+          open={open.preview}
+          onToggle={() => toggle('preview')}
+        >
+          <PreviewPane />
+        </FoldCard>
       </aside>
     </div>
   )

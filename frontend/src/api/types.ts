@@ -229,6 +229,7 @@ export interface Notification {
   body: string
   link?: string
   is_read: boolean
+  is_hidden?: boolean
   created_at: string
 }
 

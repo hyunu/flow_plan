@@ -440,6 +440,7 @@ class NotificationRead(ORMModel):
     body: str
     link: str | None = None
     is_read: bool
+    is_hidden: bool = False
     created_at: datetime
 
 

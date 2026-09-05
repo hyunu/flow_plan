@@ -221,9 +221,8 @@ export const IconShield = (p: IconProps) => (
 
 export const IconManual = (p: IconProps) => (
   <Svg {...p}>
-    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a2 2 0 0 0-2-2H6.5A2.5 2.5 0 0 0 4 4.5v15Z" />
-    <path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" />
-    <path d="M9 7h6M9 11h6" />
+    <path d="M12 7v14" />
+    <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" />
   </Svg>
 )
 

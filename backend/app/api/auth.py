@@ -59,6 +59,12 @@ def login(
     refresh = create_refresh_token(db, user.id, ip)
     audit(db, user.id, "login", "User", user.id, reason="로그인")
     db.commit()
+    try:
+        from app.services.ai_service import sync_challenge_notifications
+
+        sync_challenge_notifications(db, user)
+    except Exception:
+        pass
     return TokenPair(access_token=access, refresh_token=refresh, expires_in=settings_expires_in_seconds())
 
 

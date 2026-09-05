@@ -24,15 +24,6 @@ export function Challenges() {
 
   useEffect(load, [])
 
-  const generate = async () => {
-    try {
-      await http.post('/challenges/generate')
-      load()
-    } catch (e) {
-      alert(e instanceof Error ? e.message : '생성 실패')
-    }
-  }
-
   const respond = async (id: number) => {
     const text = responses[id]?.trim()
     if (!text) return
@@ -46,8 +37,9 @@ export function Challenges() {
   }
 
   const order: Record<string, number> = { CRITICAL: 0, WARNING: 1, ATTENTION: 2, NORMAL: 3 }
-  const sorted = [...challenges].sort((a, b) => (order[a.priority] ?? 9) - (order[b.priority] ?? 9))
-  const open = sorted.filter((c) => c.status !== 'answered')
+  const open = [...challenges]
+    .filter((c) => c.status !== 'answered')
+    .sort((a, b) => (order[a.priority] ?? 9) - (order[b.priority] ?? 9))
 
   const answerHint: Record<string, string> = {
     issue: '해결했는지, 새 예정일(YYYY-MM-DD)을 적으세요.\n막힌 후속이 있으면 그 이름도 적으세요.',
@@ -80,9 +72,6 @@ export function Challenges() {
             <p className="text-[13px] text-slate-400 mt-0.5">오늘 당신이 해야 할 일 ({open.length}개 남음)</p>
           </div>
         </div>
-        <button className="btn-primary" onClick={generate}>
-          + 챌린지 생성
-        </button>
       </div>
 
       {loading ? (
@@ -98,14 +87,14 @@ export function Challenges() {
             </div>
           ))}
         </div>
-      ) : sorted.length === 0 ? (
+      ) : open.length === 0 ? (
         <div className="card p-14 text-center text-sm text-slate-400">
           <div className="text-3xl mb-3">🎯</div>
-          생성된 챌린지가 없습니다. 생성 버튼을 눌러보세요.
+          지금 처리할 챌린지가 없습니다. 지연·이슈가 생기면 자동으로 생깁니다.
         </div>
       ) : (
         <div className="space-y-3">
-          {sorted.map((c) => (
+          {open.map((c) => (
             <div key={c.id} className={`card p-5 ${toneCard[c.priority] || ''}`}>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">

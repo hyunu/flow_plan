@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -6,6 +9,7 @@ from app.core.audit_context import get_pending_ids, get_request_meta, reset
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, engine, ensure_schema
 from app import models  # noqa: F401  (모델 등록)
+from app.services.challenge_scheduler import challenge_sync_loop
 
 Base.metadata.create_all(bind=engine)
 ensure_schema()
@@ -17,10 +21,25 @@ if settings.seed_on_startup:
 
     _seed(_SL())
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    stop = asyncio.Event()
+    task = asyncio.create_task(challenge_sync_loop(stop))
+    yield
+    stop.set()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
 app = FastAPI(
     title=settings.app_name,
     version="0.2.0",
     description="AI 기반 프로젝트 일정·진척 관리 시스템 API",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

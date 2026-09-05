@@ -29,5 +29,8 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.6-flash"
     ai_timeout_seconds: int = 60
 
+    # 오늘의 챌린지: 백엔드가 전 사용자 대상으로 다시 만드는 주기(분). 최소 5분.
+    challenge_sync_minutes: int = 60
+
 
 settings = Settings()

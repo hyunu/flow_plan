@@ -31,6 +31,12 @@ def ensure_schema():
     if "permissions" not in cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE roles ADD COLUMN permissions TEXT"))
+    if "notifications" in insp.get_table_names():
+        ncols = {c["name"] for c in insp.get_columns("notifications")}
+        if "is_hidden" not in ncols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE notifications ADD COLUMN is_hidden BOOLEAN DEFAULT 0"))
+                conn.execute(text("UPDATE notifications SET is_hidden = 0 WHERE is_hidden IS NULL"))
 
 
 def get_db():

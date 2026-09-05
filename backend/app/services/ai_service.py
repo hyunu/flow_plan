@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
@@ -32,6 +33,29 @@ from app.models.entities import (
 from app.services.schedule_service import compute_project_schedule
 
 CRITICAL, WARNING, ATTENTION, NORMAL = "CRITICAL", "WARNING", "ATTENTION", "NORMAL"
+
+_PRI_KO = {"CRITICAL": "긴급", "WARNING": "주의", "ATTENTION": "관심"}
+
+
+def challenge_notice_title(priority: str, category: str, task_title: str) -> str:
+    name = (task_title or "").strip() or "작업"
+    by_cat = {
+        "issue": f"「{name}」 이슈 기한이 지났습니다",
+        "critical_delay": f"「{name}」 크리티컬 패스가 지연됩니다",
+        "critical_progress": f"「{name}」 크리티컬 패스를 확인하세요",
+        "delay": f"「{name}」이 계획보다 늦습니다",
+        "progress_update": f"「{name}」 진척을 갱신하세요",
+    }
+    core = by_cat.get(category, f"「{name}」 오늘 확인할 일이 있습니다")
+    pri = _PRI_KO.get(priority, "")
+    return f"{pri} · {core}" if pri else core
+
+
+def notice_title_from_body(body: str, fallback: str = "오늘의 챌린지를 확인하세요") -> str:
+    m = re.search(r"「([^」]+)」", body or "")
+    if m:
+        return f"「{m.group(1)}」 오늘 확인할 일이 있습니다"
+    return fallback
 
 
 def build_project_facts(project: Project, result: ScheduleResult, db: Session) -> str:
@@ -91,17 +115,23 @@ def _task_status_for_user(result: ScheduleResult, task_id: int) -> TaskResult | 
     return None
 
 
-def generate_user_challenges(db: Session, user: User, today: date | None = None) -> list[Challenge]:
+def generate_user_challenges(
+    db: Session, user: User, today: date | None = None, *, polish: bool = False
+) -> list[Challenge]:
     """결정적 규칙으로 사용자별 Challenge 생성(§20/§21). AI는 문구를 다듬는다.
-    담당 태스크가 없는 계정(예: 시스템 관리자)은 접근 가능한 전체 프로젝트의 리스크 항목을 대상으로 삼는다."""
+    담당 태스크가 없는 계정(예: 시스템 관리자)은 접근 가능한 전체 프로젝트의 리스크 항목을 대상으로 삼는다.
+    로그인·알림 경로에서는 호출하지 않는다. polish=True일 때만 외부 AI를 친다."""
     today = today or date.today()
-    provider: AIProvider = get_ai_provider()
+    provider: AIProvider | None = get_ai_provider() if polish else None
     memberships = user.memberships
     created: list[Challenge] = []
+    role = user.role.name if user.role else ""
+    member_only = role == "Project Member"
 
     if memberships:
+        # 멤버는 담당 Task만, PM은 소속 프로젝트 전체
         projects: list[tuple[Project, bool]] = [
-            (m.project, True) for m in memberships if not m.project.is_deleted
+            (m.project, member_only) for m in memberships if not m.project.is_deleted
         ]
     else:
         # 멤버십 없는 관리자 등: 전체 프로젝트 전반의 리스크를 챌린지로
@@ -135,9 +165,22 @@ def generate_user_challenges(db: Session, user: User, today: date | None = None)
             if exists:
                 exists.message = message
                 exists.priority = priority
+                exists.category = category
                 created.append(exists)
                 continue
-            if provider.name != "mock":
+            done = (
+                db.query(Challenge)
+                .filter_by(user_id=user.id, task_id=task.id, category=category, status="answered")
+                .order_by(Challenge.id.desc())
+                .first()
+            )
+            if done:
+                when = done.created_at
+                if done.responses:
+                    when = max((r.created_at or when for r in done.responses), default=when)
+                if when and when.date() >= today:
+                    continue
+            if provider is not None and provider.name != "mock":
                 try:
                     polished = provider.generate(
                         f"다음 챌린지를 같은 사실로 2~3문장 한국어로 다듬으세요. 태스크명·일수·요청은 유지하고 프롬프트는 인용하지 마세요.\n\n{message}",
@@ -159,9 +202,72 @@ def generate_user_challenges(db: Session, user: User, today: date | None = None)
             )
             db.add(ch)
             created.append(ch)
-            db.add(Notification(user_id=user.id, channel="web", type="challenge", title=f"[{priority}] Daily Challenge", body=message, link=f"/tasks/{task.id}"))
+            # 알림은 새로 생긴 챌린지 + 긴급/주의만. 목록 새로고침·관심(ATTENTION)은 쌓지 않음.
+            # 멤버십 없는 전체 보기(관리자)는 긴급만.
+            if priority == ATTENTION:
+                continue
+            if not only_my and priority != CRITICAL:
+                continue
+            already = (
+                db.query(Notification)
+                .filter_by(user_id=user.id, type="challenge", link=f"/tasks/{task.id}")
+                .first()
+            )
+            if already:
+                continue
+            db.add(
+                Notification(
+                    user_id=user.id,
+                    channel="web",
+                    type="challenge",
+                    title=challenge_notice_title(priority, category, task.title),
+                    body=message,
+                    link=f"/tasks/{task.id}",
+                )
+            )
     db.commit()
     return created
+
+
+def sync_challenge_notifications(db: Session, user: User) -> None:
+    """이미 열린 챌린지에 없는 긴급·주의 알림만 채운다. 챌린지 생성은 하지 않는다."""
+    team = not bool(user.memberships)
+    opens = db.query(Challenge).filter_by(user_id=user.id, status="open").all()
+    added = False
+    for ch in opens:
+        if ch.priority == ATTENTION:
+            continue
+        if team and ch.priority != CRITICAL:
+            continue
+        link = f"/tasks/{ch.task_id}" if ch.task_id else "/challenges"
+        exists = (
+            db.query(Notification)
+            .filter_by(user_id=user.id, type="challenge", link=link)
+            .first()
+        )
+        if exists:
+            continue
+        task = db.get(Task, ch.task_id) if ch.task_id else None
+        title = challenge_notice_title(ch.priority, ch.category, task.title if task else "")
+        db.add(
+            Notification(
+                user_id=user.id,
+                channel="web",
+                type="challenge",
+                title=title,
+                body=ch.message,
+                link=link,
+            )
+        )
+        added = True
+    if added:
+        db.commit()
+
+
+def generate_all_user_challenges(db: Session) -> None:
+    """시드·기동 시 전 사용자 챌린지를 미리 만든다."""
+    for u in db.query(User).filter(User.is_active.is_(True)).all():
+        generate_user_challenges(db, u)
 
 
 def _task_owned_by(db: Session, task_id: int, user_id: int) -> bool:

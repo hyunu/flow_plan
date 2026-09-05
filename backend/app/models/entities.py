@@ -411,6 +411,7 @@ class Notification(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     link: Mapped[str | None] = mapped_column(String(500))
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped[User] = relationship()

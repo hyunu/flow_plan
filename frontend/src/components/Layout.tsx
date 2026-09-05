@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { http } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import type { Notification } from '../api/types'
+import { RichText } from './RichText'
 import {
   IconBell,
   IconChallenge,
@@ -16,11 +17,37 @@ import {
   IconSun,
 } from './icons'
 
+function noticeKind(type: string) {
+  if (type === 'challenge') return { label: '오늘의 챌린지', next: '태스크 상세 → 진행 기록에 원인·대책·진척을 남기세요' }
+  if (type === 'daily_report') return { label: '일일 리포트', next: '리포트에서 오늘 할 일을 확인하세요' }
+  if (type === 'weekly_report') return { label: '주간 리포트', next: '리포트에서 한 주 일정을 확인하세요' }
+  return { label: '알림', next: '관련 화면에서 내용을 확인하세요' }
+}
+
+function noticeWhen(iso?: string) {
+  if (!iso) return ''
+  const t = new Date(iso)
+  if (Number.isNaN(t.getTime())) return iso.slice(0, 16).replace('T', ' ')
+  const now = Date.now()
+  const diff = Math.max(0, now - t.getTime())
+  const min = Math.floor(diff / 60000)
+  if (min < 1) return '방금'
+  if (min < 60) return `${min}분 전`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}시간 전`
+  const clock = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
+  const day = `${t.getMonth() + 1}월 ${t.getDate()}일 ${clock}`
+  const start = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const days = Math.round((start(new Date()) - start(t)) / 86400000)
+  if (days === 1) return `어제 ${clock}`
+  if (t.getFullYear() === new Date().getFullYear()) return day
+  return `${t.getFullYear()}년 ${day}`
+}
+
 const nav = [
   { to: '/projects', label: '프로젝트', icon: IconProjects },
   { to: '/challenges', label: '오늘의 챌린지', icon: IconChallenge },
   { to: '/reports', label: '리포트', icon: IconReport },
-  { to: '/manual', label: '설명서', icon: IconManual },
   { to: '/settings', label: '설정', icon: IconSettings },
 ]
 
@@ -39,6 +66,8 @@ const roleLabel: Record<string, string> = {
 export function Layout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const notifBoxRef = useRef<HTMLDivElement>(null)
   const [notifs, setNotifs] = useState<Notification[]>([])
   const [showNotifs, setShowNotifs] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
@@ -80,6 +109,26 @@ export function Layout() {
       .then(setNotifs)
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    setShowNotifs(false)
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!showNotifs) return
+    const onPointer = (e: MouseEvent) => {
+      if (!notifBoxRef.current?.contains(e.target as Node)) setShowNotifs(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowNotifs(false)
+    }
+    document.addEventListener('mousedown', onPointer)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPointer)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [showNotifs])
 
   const unread = notifs.filter((n) => !n.is_read).length
   const roleName = user?.role_name || ''
@@ -235,44 +284,117 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
             </button>
             <div className="text-sm text-slate-400 font-medium">Flow Plan</div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => navigate('/manual')}
+              className="p-1.5 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
+              title="설명서"
+              aria-label="설명서"
+            >
+              <IconManual size={18} />
+            </button>
             <button
               onClick={() => setDark((v) => !v)}
-              className="p-2 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
+              className="p-1.5 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
               title={dark ? '라이트 모드로 전환' : '다크 모드로 전환'}
             >
               {dark ? <IconSun size={18} /> : <IconMoon size={18} />}
             </button>
-            <div className="relative">
+            <div className="relative overflow-visible" ref={notifBoxRef}>
               <button
                 onClick={() => setShowNotifs((v) => !v)}
-                className="relative p-2 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
+                className="relative overflow-visible p-1.5 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
                 title="알림"
               >
                 <IconBell size={18} />
                 {unread > 0 && (
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-slate-500 rounded-full ring-2 ring-card" />
+                  <span className="absolute -top-0.5 -right-1 min-w-[16px] px-1 py-px rounded-md bg-red-500 text-white text-[10px] font-bold leading-none text-center tabular-nums pointer-events-none">
+                    {unread}
+                  </span>
                 )}
               </button>
               {showNotifs && (
                 <div className="absolute right-0 mt-2 w-96 bg-card rounded-2xl shadow-lift ring-1 ring-slate-200 z-50 overflow-hidden animate-fade-in">
-                  <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                    <span className="font-semibold text-sm text-ink-900">알림</span>
-                    <span className="text-xs text-slate-400">{unread}개 미확인</span>
+                  <div className="px-4 py-3 border-b border-slate-100">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-sm text-ink-900">알림</span>
+                      <span className="text-xs text-slate-400">{unread}개 미확인</span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-2">
+                      {unread > 0 && (
+                        <button
+                          type="button"
+                          className="text-[11px] font-semibold text-slate-500 hover:text-ink-700"
+                          onClick={() => {
+                            http.post('/notifications/read-all').catch(() => {})
+                            setNotifs((prev) => prev.map((x) => ({ ...x, is_read: true })))
+                          }}
+                        >
+                          모두 읽음
+                        </button>
+                      )}
+                      {notifs.some((x) => x.is_read) && (
+                        <button
+                          type="button"
+                          className="text-[11px] font-semibold text-slate-500 hover:text-ink-700"
+                          onClick={() => {
+                            http.post('/notifications/hide-read').catch(() => {})
+                            setNotifs((prev) => prev.filter((x) => !x.is_read))
+                          }}
+                        >
+                          읽은 알림 숨기기
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="max-h-[28rem] overflow-y-auto divide-y divide-slate-50">
+                  <div className="max-h-[28rem] overflow-y-auto divide-y divide-slate-100">
                     {notifs.length === 0 ? (
                       <div className="px-4 py-10 text-center text-sm text-slate-400">
                         알림이 없습니다
                       </div>
                     ) : (
                       notifs.slice(0, 30).map((n) => (
-                        <div key={n.id} className="px-4 py-3 hover:bg-surface-50">
-                          <div className="text-[11px] font-semibold text-slate-400 uppercase">
+                        <button
+                          key={n.id}
+                          type="button"
+                          className={`w-full text-left px-4 py-3 transition-colors ${
+                            n.is_read
+                              ? 'bg-white text-slate-400 hover:bg-surface-50'
+                              : 'bg-white hover:bg-surface-50'
+                          }`}
+                          onClick={() => {
+                            if (!n.is_read) {
+                              http.post(`/notifications/${n.id}/read`).catch(() => {})
+                              setNotifs((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)))
+                            }
+                            setShowNotifs(false)
+                            if (n.link) navigate(n.link)
+                          }}
+                        >
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className={`text-[11px] font-semibold ${n.is_read ? 'text-slate-300' : 'text-slate-400'}`}>
+                              {noticeKind(n.type).label}
+                            </span>
+                            <time
+                              className="text-[11px] text-slate-400 tabular-nums shrink-0"
+                              dateTime={n.created_at}
+                              title={n.created_at?.slice(0, 16).replace('T', ' ')}
+                            >
+                              {noticeWhen(n.created_at)}
+                            </time>
+                          </div>
+                          <div
+                            className={`text-sm mt-0.5 leading-snug ${
+                              n.is_read ? 'font-medium text-slate-400' : 'font-semibold text-ink-900'
+                            }`}
+                          >
                             {n.title}
                           </div>
-                          <div className="text-sm text-ink-700 mt-0.5 line-clamp-2">{n.body}</div>
-                        </div>
+                          <div className={`text-[13px] mt-1 line-clamp-2 ${n.is_read ? 'text-slate-300' : 'text-ink-600'}`}>
+                            <RichText text={n.body.replace(/\*\*/g, '')} />
+                          </div>
+                        </button>
                       ))
                     )}
                   </div>

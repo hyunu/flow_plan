@@ -929,7 +929,16 @@ def seed(db: Session) -> None:
         ch = Challenge(user_id=users[user_key].id, project_id=a.project.id,
                        task_id=task_id, priority=prio, category="delay", message=msg, created_by="ai")
         db.add(ch)
-        db.add(Notification(user_id=users[user_key].id, channel="web", type="challenge", title=f"[{prio}] Daily Challenge", body=msg, link=f"/tasks/{task_id}"))
+        db.add(
+            Notification(
+                user_id=users[user_key].id,
+                channel="web",
+                type="challenge",
+                title=f"{'긴급' if prio == 'CRITICAL' else '주의' if prio == 'WARNING' else '관심'} · {msg.split('.')[0]}",
+                body=msg,
+                link=f"/tasks/{task_id}",
+            )
+        )
 
     # 이메일 설정(기본 비활성 — 관리자 페이지에서 설정)
     db.add(EmailConfig(smtp_host="", smtp_port=587, smtp_user=None, smtp_password=None,
@@ -957,6 +966,10 @@ def seed(db: Session) -> None:
         backfill_feedback(db, p.project, users, today)
 
     db.commit()
+
+    from app.services.ai_service import generate_all_user_challenges
+
+    generate_all_user_challenges(db)
 
     print("=== 시드 데이터 생성 완료 ===")
     print(f"  사용자: {len(users)}명")
