@@ -4,6 +4,7 @@ import type { EmailSettings, PermissionGroup, Role, User, UserSetting } from '..
 import { useAuth } from '../auth/AuthContext'
 import { IconBell, IconLayout, IconMail, IconSettings, IconShield, IconUser } from '../components/icons'
 import { Badge } from '../components/ui'
+import { useDesktopWin } from '../components/DesktopChrome'
 import { DisplaySettings } from './DisplaySettings'
 
 function roleTone(name: string) {
@@ -24,9 +25,20 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   )
 }
 
-function TabNav({ tab, setTab, admin }: { tab: string; setTab: (t: string) => void; admin: boolean }) {
+function TabNav({
+  tab,
+  setTab,
+  admin,
+  desktop,
+}: {
+  tab: string
+  setTab: (t: string) => void
+  admin: boolean
+  desktop: boolean
+}) {
   const items = [
     { key: 'display', label: '화면 표시', icon: IconLayout },
+    ...(desktop ? [{ key: 'desktop', label: '데스크톱', icon: IconSettings }] : []),
     ...(admin
       ? [
           { key: 'users', label: '사용자 관리', icon: IconUser },
@@ -498,8 +510,25 @@ function DeliverySettings() {
   )
 }
 
+function DesktopAppSettings() {
+  return (
+    <div className="card p-6 space-y-3">
+      <h2 className="font-semibold text-ink-900">단축키 · 서버</h2>
+      <p className="text-sm text-slate-500">전역 단축키와 백엔드 서버 주소를 바꿉니다.</p>
+      <button
+        type="button"
+        className="btn-primary"
+        onClick={() => window.dispatchEvent(new CustomEvent('flowplan-open-desk-settings'))}
+      >
+        데스크톱 설정 열기
+      </button>
+    </div>
+  )
+}
+
 export function Settings() {
   const { user } = useAuth()
+  const { desk } = useDesktopWin()
   const admin = user?.role_name === 'System Administrator'
   const [tab, setTab] = useState('display')
 
@@ -518,9 +547,10 @@ export function Settings() {
       </div>
 
       <div className="flex flex-col md:flex-row gap-6">
-        <TabNav tab={tab} setTab={setTab} admin={admin} />
+        <TabNav tab={tab} setTab={setTab} admin={admin} desktop={desk} />
         <div className="flex-1 min-w-0">
           {tab === 'display' && <DisplaySettings />}
+          {desk && tab === 'desktop' && <DesktopAppSettings />}
           {admin && tab === 'users' && <UserManagement />}
           {admin && tab === 'permissions' && <PermissionMatrix />}
           {admin && tab === 'email' && <EmailSettings />}

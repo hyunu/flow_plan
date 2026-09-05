@@ -4,6 +4,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { http } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import type { Notification } from '../api/types'
+import { useDesktopWin } from './DesktopChrome'
 import { RichText } from './RichText'
 import {
   IconBell,
@@ -65,6 +66,7 @@ const roleLabel: Record<string, string> = {
 
 export function Layout() {
   const { user, logout } = useAuth()
+  const { desk, hide, startMove } = useDesktopWin()
   const navigate = useNavigate()
   const location = useLocation()
   const notifBoxRef = useRef<HTMLDivElement>(null)
@@ -154,17 +156,20 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
     )
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen h-full flex">
       {/* Sidebar — 데스크톱: 고정 / 모바일: 햄버거로 여는 오버레이 드로어 */}
       <aside
-        className={`relative bg-black text-white/45 flex-col shrink-0 sticky top-0 h-screen transition-all duration-200 ${
+        className={`relative bg-black text-white/45 flex-col shrink-0 sticky top-0 h-full self-stretch transition-all duration-200 ${
           mobileNav
             ? 'fixed inset-y-0 left-0 z-50 flex w-44 shadow-2xl'
             : `hidden lg:flex ${collapsed ? 'w-[68px]' : 'w-44'}`
         }`}
       >
         {/* 헤더: 로고 */}
-        <div className={`h-16 flex items-center border-b border-white/5 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-4'}`}>
+        <div
+          className={`desktop-drag relative z-20 h-16 flex items-center border-b border-white/5 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-4'}`}
+          onPointerDown={desk ? startMove : undefined}
+        >
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500 grid place-items-center text-white font-bold text-sm shadow-lg shadow-brand-900/30 shrink-0">
             F
           </div>
@@ -176,17 +181,29 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
           )}
         </div>
 
-        {/* 경계선 수직 중앙의 원형 접기/펼치기 버튼 */}
-        <button
-          onClick={toggleCollapse}
-          aria-label={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
-          title={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
-          className="absolute top-1/2 -translate-y-1/2 -right-3 z-20 w-6 h-6 rounded-full bg-card border border-slate-300 dark:border-slate-600 shadow-md grid place-items-center text-slate-500 hover:text-ink-900 hover:border-brand-400 transition-colors"
-        >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d={collapsed ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'} />
-          </svg>
-        </button>
+        <div className="absolute inset-y-0 -right-3.5 z-20 flex items-center pointer-events-none">
+          <button
+            type="button"
+            onClick={toggleCollapse}
+            aria-label={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
+            title={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
+            className="pointer-events-auto w-7 h-7 rounded-full bg-card text-slate-500 shadow-[0_1px_3px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/90 dark:ring-white/15 hover:text-ink-900 hover:ring-brand-400 transition-colors flex items-center justify-center"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d={collapsed ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'} />
+            </svg>
+          </button>
+        </div>
 
         <nav className={`flex-1 py-4 space-y-1 ${collapsed ? 'px-1.5' : 'px-3'}`} onClick={() => setMobileNav(false)}>
           {sectionTitle('메뉴')}
@@ -269,12 +286,15 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
       )}
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-card/80 backdrop-blur border-b border-slate-200/80 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-40">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full">
+        <header
+          className="desktop-drag h-16 bg-card/80 backdrop-blur border-b border-slate-200/80 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-40"
+          onPointerDown={desk ? startMove : undefined}
+        >
           <div className="flex items-center gap-2.5">
             <button
               onClick={() => setMobileNav(true)}
-              className="lg:hidden p-2 -ml-1 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
+              className="desktop-no-drag lg:hidden p-2 -ml-1 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
               aria-label="메뉴 열기"
               title="메뉴"
             >
@@ -288,7 +308,7 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
             <button
               type="button"
               onClick={() => navigate('/manual')}
-              className="p-1.5 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
+              className="desktop-no-drag p-1.5 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
               title="설명서"
               aria-label="설명서"
             >
@@ -296,7 +316,7 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
             </button>
             <button
               onClick={() => setDark((v) => !v)}
-              className="p-1.5 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
+              className="desktop-no-drag p-1.5 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
               title={dark ? '라이트 모드로 전환' : '다크 모드로 전환'}
             >
               {dark ? <IconSun size={18} /> : <IconMoon size={18} />}
@@ -304,7 +324,7 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
             <div className="relative overflow-visible" ref={notifBoxRef}>
               <button
                 onClick={() => setShowNotifs((v) => !v)}
-                className="relative overflow-visible p-1.5 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
+                className="desktop-no-drag relative overflow-visible p-1.5 rounded-lg text-slate-500 hover:bg-surface-100 hover:text-ink-700 transition-colors"
                 title="알림"
               >
                 <IconBell size={18} />
@@ -401,9 +421,20 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
                 </div>
               )}
             </div>
+            {desk && (
+              <button
+                type="button"
+                onClick={hide}
+                className="desktop-no-drag ml-1 p-1.5 rounded-lg text-slate-400 hover:bg-red-500 hover:text-white transition-colors"
+                title="창 숨기기"
+                aria-label="창 숨기기"
+              >
+                ✕
+              </button>
+            )}
           </div>
         </header>
-        <main className="flex-1 px-4 sm:px-8 py-7">
+        <main className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 py-7">
           <Outlet />
         </main>
       </div>

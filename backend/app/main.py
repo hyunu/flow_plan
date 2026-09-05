@@ -19,7 +19,10 @@ if settings.seed_on_startup:
     from app.core.database import SessionLocal as _SL
     from app.seed import seed as _seed
 
-    _seed(_SL())
+    try:
+        _seed(_SL())
+    except Exception:
+        pass
 
 
 @asynccontextmanager

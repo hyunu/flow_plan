@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -15,8 +16,13 @@ DEFAULT_PORT = 8765
 
 
 def data_dir() -> Path:
-    base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-    d = Path(base) / APP_NAME
+    if sys.platform == "darwin":
+        d = Path.home() / "Library" / "Application Support" / APP_NAME
+    elif sys.platform == "win32":
+        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        d = Path(base) / APP_NAME
+    else:
+        d = Path.home() / ".local" / "share" / APP_NAME
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -59,6 +65,49 @@ def frontend_dist() -> Path:
 
 def backend_pkg() -> Path:
     return app_root() / "backend"
+
+
+def prefs_path() -> Path:
+    return data_dir() / "desktop.json"
+
+
+def load_prefs() -> dict:
+    p = prefs_path()
+    if not p.exists():
+        return {}
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        return raw if isinstance(raw, dict) else {}
+    except Exception:
+        return {}
+
+
+def update_prefs(**kwargs) -> dict:
+    data = load_prefs()
+    for key, val in kwargs.items():
+        if val is None:
+            data.pop(key, None)
+        else:
+            data[key] = val
+    prefs_path().write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return data
+
+
+def normalize_api_base(url: str) -> str:
+    u = (url or "").strip()
+    if not u or u in ("/api", "local", "내장"):
+        return ""
+    u = u.rstrip("/")
+    if not u.startswith(("http://", "https://")):
+        u = "http://" + u
+    return u
+
+
+def api_base() -> str:
+    env = (os.environ.get("FLOWPLAN_API_BASE") or "").strip()
+    if env:
+        return normalize_api_base(env)
+    return normalize_api_base(str(load_prefs().get("api_base") or ""))
 
 
 def icon_path() -> Path:

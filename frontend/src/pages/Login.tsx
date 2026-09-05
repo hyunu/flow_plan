@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { useDesktopWin } from '../components/DesktopChrome'
 
 export function Login() {
   const { login } = useAuth()
+  const { desk, hide, startMove } = useDesktopWin()
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -32,7 +34,10 @@ export function Login() {
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
       {/* 좌측 브랜드 패널 */}
-      <div className="hidden lg:flex flex-col justify-between p-12 bg-slate-900 text-white">
+      <div
+        className="desktop-drag hidden lg:flex flex-col justify-between p-12 bg-slate-900 text-white"
+        onPointerDown={desk ? startMove : undefined}
+      >
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-violet-500 grid place-items-center font-bold text-lg shadow-lg">
             F
@@ -41,20 +46,30 @@ export function Login() {
         </div>
         <div className="space-y-4">
           <h1 className="text-3xl font-bold leading-tight">
-            프로젝트 일정, <br />
-            <span className="text-brand-300">AI가 짚어드립니다.</span>
+            프로젝트 일정과 진척사항, <br />
+            <span className="text-brand-300">Flow Plan이 스스로 관리합니다.</span>
           </h1>
           <ul className="space-y-2 text-slate-400 text-sm">
-            <li>· Baseline / Current / Actual 3중 일정 관리</li>
-            <li>· 크리티컬 패스 자동 분석</li>
-            <li>· 지연 원인 · 대책 수집 및 일일 Challenge</li>
+            <li>· 최초계획 · 현재계획 · 실제 일정을 비교해 진척을 정확하게 파악</li>
+            <li>· 크리티컬 패스를 분석해 예상 지연을 미리 발견</li>
+            <li>· 오늘의 챌린지를 찾아 지연 원인과 대응책까지 제시</li>
           </ul>
         </div>
         <div className="text-xs text-slate-600">Deterministic Schedule Engine + AI Interpretation</div>
       </div>
 
       {/* 우측 로그인 폼 */}
-      <div className="flex items-center justify-center p-8">
+      <div className="relative flex items-center justify-center p-8">
+        {desk && (
+          <button
+            type="button"
+            onClick={hide}
+            className="desktop-no-drag absolute top-4 right-4 w-8 h-8 rounded-lg text-slate-400 hover:bg-red-500 hover:text-white grid place-items-center"
+            title="창 숨기기"
+          >
+            ✕
+          </button>
+        )}
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-2 mb-8">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-violet-500 grid place-items-center font-bold">F</div>

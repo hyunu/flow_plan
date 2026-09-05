@@ -1,6 +1,31 @@
 // API 클라이언트: Access Token 자동 부착 + Refresh Token 자동 갱신
 
-const BASE = import.meta.env.VITE_API_BASE || '/api'
+const FALLBACK = import.meta.env.VITE_API_BASE || '/api'
+const API_KEY = 'flowplan_api_base'
+
+export function getApiBase(): string {
+  const w = window as unknown as { __FLOWPLAN_API_BASE?: string }
+  if (w.__FLOWPLAN_API_BASE) return w.__FLOWPLAN_API_BASE.replace(/\/$/, '')
+  const saved = localStorage.getItem(API_KEY)?.trim()
+  if (saved) return saved.replace(/\/$/, '')
+  return FALLBACK
+}
+
+export function applyApiBase(url: string) {
+  const w = window as unknown as { __FLOWPLAN_API_BASE?: string }
+  const clean = (url || '').trim().replace(/\/$/, '')
+  if (!clean || clean === '/api') {
+    delete w.__FLOWPLAN_API_BASE
+    localStorage.removeItem(API_KEY)
+    return
+  }
+  w.__FLOWPLAN_API_BASE = clean
+  localStorage.setItem(API_KEY, clean)
+}
+
+function BASE() {
+  return getApiBase()
+}
 
 type TokenPair = { access_token: string; refresh_token: string }
 
@@ -29,7 +54,7 @@ let refreshPromise: Promise<string> | null = null
 async function refreshAccessToken(): Promise<string> {
   const tokens = getTokens()
   if (!tokens?.refresh_token) throw new Error('no refresh token')
-  const res = await fetch(`${BASE}/auth/refresh`, {
+  const res = await fetch(`${BASE()}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: tokens.refresh_token }),
@@ -49,7 +74,7 @@ async function rawRequest(path: string, init: RequestInit = {}, retry = true): P
   if (tokens) headers.set('Authorization', `Bearer ${tokens.access_token}`)
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
 
-  let res = await fetch(`${BASE}${path}`, { ...init, headers })
+  let res = await fetch(`${BASE()}${path}`, { ...init, headers })
 
   if (res.status === 401 && tokens && retry) {
     try {
@@ -57,7 +82,7 @@ async function rawRequest(path: string, init: RequestInit = {}, retry = true): P
         refreshPromise = null
       }))
       headers.set('Authorization', `Bearer ${access}`)
-      res = await fetch(`${BASE}${path}`, { ...init, headers })
+      res = await fetch(`${BASE()}${path}`, { ...init, headers })
     } catch {
       return res
     }

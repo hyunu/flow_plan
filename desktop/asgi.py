@@ -19,7 +19,7 @@ for _p in (config.backend_pkg(), config.repo_dir() / "backend"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-# ⚠️ config.ensure_env()가 먼저 호출된 상태여야 한다 (app.py 에서 처리)
+# ⚠️ config.ensure_env()가 먼저 호출된 상태여야 한다 (launch.py 에서 처리)
 from app.main import app as backend_app  # noqa: E402
 
 app = FastAPI(title="Flow Plan Desktop")

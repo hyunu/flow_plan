@@ -455,6 +455,7 @@ def polish_demo_project(builder: P, today: date, *, behind: bool = False) -> Non
             plan_progress=plan,
         ))
         day += timedelta(days=7)
+    db.flush()
     today_row = db.query(ProgressSnapshot).filter_by(
         project_id=builder.project.id, snapshot_date=today
     ).first()

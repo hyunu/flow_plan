@@ -1,6 +1,7 @@
 # 데스크톱 래퍼 전용 의존성 (백엔드 의존성은 backend/pyproject.toml)
-webview>=5.0
+pywebview>=5.0
 pystray>=0.19
 Pillow>=10.0
 uvicorn>=0.27
+pynput>=1.7
 pyinstaller>=6.0
