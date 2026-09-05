@@ -113,8 +113,8 @@ export function Challenges() {
                     <PriorityBadge priority={c.priority} />
                     <span className="text-xs text-slate-400">
                       {{
-                        critical_delay: 'CP 지연',
-                        critical_progress: 'CP 점검',
+                        critical_delay: '크리티컬 지연',
+                        critical_progress: '크리티컬 점검',
                         issue: '이슈 기한',
                         delay: '일반 지연',
                         progress_update: '진척 공백',

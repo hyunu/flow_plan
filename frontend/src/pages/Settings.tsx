@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { http } from '../api/client'
 import type { EmailSettings, PermissionGroup, Role, User, UserSetting } from '../api/types'
-import { IconBell, IconMail, IconSettings, IconShield, IconUser } from '../components/icons'
+import { useAuth } from '../auth/AuthContext'
+import { IconBell, IconLayout, IconMail, IconSettings, IconShield, IconUser } from '../components/icons'
 import { Badge } from '../components/ui'
+import { DisplaySettings } from './DisplaySettings'
 
 function roleTone(name: string) {
   return name === 'System Administrator' ? 'violet' : name === 'Project Manager' ? 'blue' : 'slate'
@@ -22,12 +24,17 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   )
 }
 
-function TabNav({ tab, setTab }: { tab: string; setTab: (t: string) => void }) {
+function TabNav({ tab, setTab, admin }: { tab: string; setTab: (t: string) => void; admin: boolean }) {
   const items = [
-    { key: 'users', label: '사용자 관리', icon: IconUser },
-    { key: 'permissions', label: '권한 설정', icon: IconShield },
-    { key: 'email', label: '이메일(SMTP)', icon: IconMail },
-    { key: 'delivery', label: '리포트 발송', icon: IconBell },
+    { key: 'display', label: '화면 표시', icon: IconLayout },
+    ...(admin
+      ? [
+          { key: 'users', label: '사용자 관리', icon: IconUser },
+          { key: 'permissions', label: '권한 설정', icon: IconShield },
+          { key: 'email', label: '이메일(SMTP)', icon: IconMail },
+          { key: 'delivery', label: '리포트 발송', icon: IconBell },
+        ]
+      : []),
   ]
   return (
     <aside className="md:w-52 shrink-0">
@@ -492,7 +499,9 @@ function DeliverySettings() {
 }
 
 export function Settings() {
-  const [tab, setTab] = useState('users')
+  const { user } = useAuth()
+  const admin = user?.role_name === 'System Administrator'
+  const [tab, setTab] = useState('display')
 
   return (
     <div className="max-w-6xl mx-auto animate-fade-in">
@@ -501,18 +510,21 @@ export function Settings() {
           <IconSettings size={19} />
         </div>
         <div>
-          <h1 className="text-xl font-bold text-ink-900">관리자 설정</h1>
-          <p className="text-[13px] text-slate-400 mt-0.5">사용자 · 권한 · 이메일 · 리포트 발송 (관리자 전용)</p>
+          <h1 className="text-xl font-bold text-ink-900">설정</h1>
+          <p className="text-[13px] text-slate-400 mt-0.5">
+            {admin ? '화면 표시 · 사용자 · 권한 · 이메일 · 리포트 발송' : '완료·지연 등 화면 요소를 이 기기에 맞게 바꿉니다'}
+          </p>
         </div>
       </div>
 
       <div className="flex flex-col md:flex-row gap-6">
-        <TabNav tab={tab} setTab={setTab} />
+        <TabNav tab={tab} setTab={setTab} admin={admin} />
         <div className="flex-1 min-w-0">
-          {tab === 'users' && <UserManagement />}
-          {tab === 'permissions' && <PermissionMatrix />}
-          {tab === 'email' && <EmailSettings />}
-          {tab === 'delivery' && <DeliverySettings />}
+          {tab === 'display' && <DisplaySettings />}
+          {admin && tab === 'users' && <UserManagement />}
+          {admin && tab === 'permissions' && <PermissionMatrix />}
+          {admin && tab === 'email' && <EmailSettings />}
+          {admin && tab === 'delivery' && <DeliverySettings />}
         </div>
       </div>
     </div>

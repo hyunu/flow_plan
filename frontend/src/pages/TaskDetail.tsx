@@ -5,7 +5,7 @@ import type { Group, ProgressUpdate, ScheduleChange, Task } from '../api/types'
 import { useCan } from '../auth/AuthContext'
 import { TaskFormModal } from '../components/TaskFormModal'
 import { IconArrowLeft, IconClock, IconFlag, IconHistory, IconLink, IconUser } from '../components/icons'
-import { Badge, InfoTip, ProgressBar, StatusBadge } from '../components/ui'
+import { CriticalBadge, DelayMark, InfoTip, ProgressBar, StatusBadge } from '../components/ui'
 import { SkeletonCard, SkeletonRow, SkeletonText } from '../components/Skeleton'
 
 const CardHead = ({
@@ -269,8 +269,8 @@ export function TaskDetail() {
                 {task.title}
               </h1>
               <StatusBadge status={task.status} />
-              {task.is_critical && <Badge tone="red">크리티컬 패스</Badge>}
-              {delay ? <Badge tone="red">지연 {task.delay_days}일</Badge> : <Badge tone="green">정상 진행</Badge>}
+              {task.is_critical && <CriticalBadge />}
+              <DelayMark days={delay ? task.delay_days : 0} />
               <span className="text-xs text-slate-300">#{task.id}</span>
             </div>
             {(canEditSchedule || canUpdateProgress) && (

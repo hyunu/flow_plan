@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Task } from '../api/types'
 import { TreeConnector, TreeToggle, buildGroupedTaskTree } from '../lib/taskTree'
 import { IconList, IconSearch, IconUser } from './icons'
-import { ProgressBar, StatusBadge } from './ui'
+import { useDisplay } from '../auth/DisplayContext'
+import { CriticalBadge, DelayMark, ProgressBar, StatusBadge } from './ui'
 
 interface Props {
   tasks: Task[]
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function TaskTable({ tasks, userId, filter, onSelect, onUserChange }: Props) {
+  const { prefs } = useDisplay()
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -192,14 +194,14 @@ export function TaskTable({ tasks, userId, filter, onSelect, onUserChange }: Pro
                           hasChildren.has(row.task.id)
                             ? 'text-[13px] font-semibold text-ink-900'
                             : 'text-[13px] font-medium text-ink-700'
-                        }`}
+                        } ${prefs.doneMark === 'strike' && row.task.status === 'completed' ? 'line-through text-slate-400' : ''}`}
                       >
                         {row.task.title}
                       </span>
                       {hasChildren.has(row.task.id) && (
                         <span className="shrink-0 text-[10px] text-slate-400">({childCounts.get(row.task.id)})</span>
                       )}
-                      {row.task.is_critical && <span className="badge bg-red-50 text-red-500 ring-1 ring-red-200">CP</span>}
+                      {row.task.is_critical && <CriticalBadge />}
                     </div>
                   </td>
                 <td className="td">
@@ -235,11 +237,7 @@ export function TaskTable({ tasks, userId, filter, onSelect, onUserChange }: Pro
                     </div>
                   </td>
                   <td className="td text-center">
-                    {row.task.delay_days != null && row.task.delay_days > 0 ? (
-                      <span className="badge bg-red-50 text-red-500 ring-1 ring-red-200">+{row.task.delay_days}일</span>
-                    ) : (
-                      <span className="text-slate-300">—</span>
-                    )}
+                    <DelayMark days={row.task.delay_days} />
                   </td>
                   <td className="td">
                     <div className="flex gap-1">

@@ -83,7 +83,7 @@ export function DependencyModal({ open, tasks, dependencies, onClose, onSaved }:
           <form onSubmit={submit} className="space-y-3">
             <p className="text-[13px] text-slate-500 leading-relaxed">
               <span className="font-semibold text-ink-700">FS(종료→시작)</span> 순서를 지정합니다. 선행 Task 종료 후 후행 Task가 시작되며,
-              크리티컬패스(CP)는 이 의존성으로부터 자동 계산됩니다.
+              크리티컬 패스는 이 의존성으로부터 자동 계산됩니다.
             </p>
             <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
               <div>

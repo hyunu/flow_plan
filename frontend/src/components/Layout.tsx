@@ -21,6 +21,7 @@ const nav = [
   { to: '/challenges', label: '오늘의 챌린지', icon: IconChallenge },
   { to: '/reports', label: '리포트', icon: IconReport },
   { to: '/manual', label: '설명서', icon: IconManual },
+  { to: '/settings', label: '설정', icon: IconSettings },
 ]
 
 const roleTone: Record<string, string> = {
@@ -154,22 +155,6 @@ const navLinkCls = ({ isActive }: { isActive: boolean }) =>
               {!collapsed && label}
             </NavLink>
           ))}
-          {user?.role_name === 'System Administrator' && (
-            <>
-              {sectionTitle('시스템')}
-              <NavLink
-                to="/settings"
-                className={navLinkCls}
-                onMouseEnter={(e) => showTip(e, '관리자 설정')}
-                onMouseLeave={hideTip}
-                onFocus={(e) => showTip(e, '관리자 설정')}
-                onBlur={hideTip}
-              >
-                <IconSettings size={18} className="shrink-0 text-white/40 group-hover:text-white/80" />
-                {!collapsed && '관리자 설정'}
-              </NavLink>
-            </>
-          )}
         </nav>
 
         {/* 하단 사용자 */}

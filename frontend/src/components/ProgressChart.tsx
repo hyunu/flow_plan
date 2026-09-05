@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { Link } from 'react-router-dom'
 import type { Task } from '../api/types'
 import { IconExpand, IconRefresh, IconShrink } from './icons'
+import { useDisplay } from '../auth/DisplayContext'
+import { chartColors, hexWithAlpha } from '../lib/displayPrefs'
 import { InfoTip } from './ui'
 
 const DAY = 86400000
@@ -143,6 +145,8 @@ export function ProgressChart({
   progressSnapshots,
   onRefresh,
 }: Props) {
+  const { prefs } = useDisplay()
+  const cc = chartColors(prefs.colors)
   const W = 720
   const H = 316
   const PAD = { l: 46, r: 36, t: 26, b: 32 }
@@ -649,21 +653,21 @@ export function ProgressChart({
     const rows: { label: string; value: string; color: string }[] = []
     if (showSeries.baseline && baseCum) {
       const v = idx(baseCum)
-      if (v != null) rows.push({ label: '최초계획', value: `${v.toFixed(1)}%`, color: '#3b82f6' })
+      if (v != null) rows.push({ label: '최초계획', value: `${v.toFixed(1)}%`, color: cc.baseline })
     }
     if (showSeries.plan) {
       const v = idx(planCum)
-      if (v != null) rows.push({ label: '계획', value: `${v.toFixed(1)}%`, color: 'rgb(var(--slate-500))' })
+      if (v != null) rows.push({ label: '계획', value: `${v.toFixed(1)}%`, color: cc.plan })
     }
     {
       const actTs = hover.ts <= todayTs ? hover.ts : todayTs
       const i = Math.min(Math.max(Math.round((actTs - min) / DAY), 0), actualCum.length - 1)
       const v = Math.min(100, Math.max(0, (actualCum[i] / totalWork) * 100))
-      rows.push({ label: '실적', value: `${v.toFixed(1)}%`, color: 'rgb(var(--ink-900))' })
+      rows.push({ label: '실적', value: `${v.toFixed(1)}%`, color: cc.actual })
     }
     if (showSeries.forecast && hover.ts >= todayTs && foreCum) {
       const v = idx(foreCum)
-      if (v != null) rows.push({ label: '예측', value: `${v.toFixed(1)}%`, color: '#dc2626' })
+      if (v != null) rows.push({ label: '예측', value: `${v.toFixed(1)}%`, color: cc.forecast })
     }
     const marks = [
       ...amsPts,
@@ -673,7 +677,7 @@ export function ProgressChart({
       .filter((m) => Math.abs(m.ts - hover.ts) < DAY * 1.5)
       .map((m) => m.name)
     return { dateLabel, rows, marks: [...new Set(marks)] }
-  }, [hover, totalWork, min, planCum, baseCum, actualCum, foreCum, showSeries, todayTs, amsPts, msPts, fmsPts])
+  }, [hover, totalWork, min, planCum, baseCum, actualCum, foreCum, showSeries, todayTs, amsPts, msPts, fmsPts, cc])
   const zoomAround = (factor: number, anchorTs?: number) => {
     if (factor < 1 && domain == null) return
     const span = effMax - effMin
@@ -806,12 +810,12 @@ export function ProgressChart({
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
         <defs>
           <linearGradient id="pg-act" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={cv('ink-900')} stopOpacity="0.22" />
-            <stop offset="100%" stopColor={cv('ink-900')} stopOpacity="0.02" />
+            <stop offset="0%" stopColor={cc.actual} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={cc.actual} stopOpacity="0.02" />
           </linearGradient>
           <linearGradient id="pg-plan" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={cv('slate-500')} stopOpacity="0.16" />
-            <stop offset="100%" stopColor={cv('slate-500')} stopOpacity="0.02" />
+            <stop offset="0%" stopColor={cc.plan} stopOpacity="0.16" />
+            <stop offset="100%" stopColor={cc.plan} stopOpacity="0.02" />
           </linearGradient>
           <clipPath id="pg-zoom">
             <rect x={PAD.l} y={PAD.t - 8} width={plotW} height={plotH + 20} />
@@ -837,8 +841,8 @@ export function ProgressChart({
         {/* 지연 구간 음영 */}
         {delayRegion && showSeries.forecast && (
           <g>
-            <rect x={delayRegion.x0} y={PAD.t} width={delayRegion.x1 - delayRegion.x0} height={plotH} fill={cv('slate-400')} opacity={0.18} />
-            <line x1={delayRegion.x0} y1={sy(0)} x2={delayRegion.x0} y2={sy(100)} stroke={cv('slate-400')} strokeWidth={0.9} strokeDasharray="3,3" opacity={0.4} />
+            <rect x={delayRegion.x0} y={PAD.t} width={delayRegion.x1 - delayRegion.x0} height={plotH} fill={hexWithAlpha(cc.delay, 0.16)} />
+            <line x1={delayRegion.x0} y1={sy(0)} x2={delayRegion.x0} y2={sy(100)} stroke={cc.delay} strokeWidth={0.9} strokeDasharray="3,3" opacity={0.45} />
           </g>
         )}
 
@@ -847,23 +851,23 @@ export function ProgressChart({
 
         {/* 오늘 라인 — 곡선·도트보다 아래 */}
         {todayInView && (
-          <line x1={todayX} y1={sy(100)} x2={todayX} y2={sy(0)} stroke="#3b82f6" strokeWidth={1.2} />
+          <line x1={todayX} y1={sy(100)} x2={todayX} y2={sy(0)} stroke={cc.today} strokeWidth={1.2} />
         )}
 
         {showSeries.baseline && viz.pts.baseline.length > 0 && (
-          <path d={linearPath(viz.pts.baseline)} stroke="#3b82f6" strokeWidth={0.9} strokeDasharray="2,3" fill="none" />
+          <path d={linearPath(viz.pts.baseline)} stroke={cc.baseline} strokeWidth={0.9} strokeDasharray="2,3" fill="none" />
         )}
         {showSeries.plan && viz.pts.plan.length > 0 && (
-          <path d={linearPath(viz.pts.plan)} stroke={cv('slate-400')} strokeWidth={1} strokeDasharray="1.6,2.8" fill="none" />
+          <path d={linearPath(viz.pts.plan)} stroke={cc.plan} strokeWidth={1} strokeDasharray="1.6,2.8" fill="none" />
         )}
         {showSeries.forecast && viz.pts.forecast.length > 0 && (
-          <path d={linearPath(viz.pts.forecast)} stroke="#dc2626" strokeWidth={1} strokeDasharray="1.6,2.8" fill="none" />
+          <path d={linearPath(viz.pts.forecast)} stroke={cc.forecast} strokeWidth={1} strokeDasharray="1.6,2.8" fill="none" />
         )}
         {actualLinePts.length > 0 && (
-          <path d={linearPath(actualLinePts)} stroke={cv('ink-900')} strokeWidth={2} fill="none" />
+          <path d={linearPath(actualLinePts)} stroke={cc.actual} strokeWidth={2} fill="none" />
         )}
         {snapPts.map((p, i) => (
-          <circle key={`snap${i}`} cx={p.x} cy={p.y} r={3.4} fill={cv('card')} stroke={cv('ink-900')} strokeWidth={1.2} />
+          <circle key={`snap${i}`} cx={p.x} cy={p.y} r={3.4} fill={cv('card')} stroke={cc.actual} strokeWidth={1.2} />
         ))}
         </g>
 
@@ -873,19 +877,19 @@ export function ProgressChart({
             cx={viz.pts.forecast[viz.pts.forecast.length - 1].x}
             cy={viz.pts.forecast[viz.pts.forecast.length - 1].y}
             r={4}
-            fill="#dc2626"
+            fill={cc.forecast}
             stroke={cv('card')}
             strokeWidth={1.5}
           />
         )}
         {showSeries.plan && msPts.map((m, i) => (
-          <circle key={`ms-${i}`} cx={m.x} cy={m.y} r={5} fill={cv('card')} stroke={cv('slate-400')} strokeWidth={1.7} />
+          <circle key={`ms-${i}`} cx={m.x} cy={m.y} r={5} fill={cv('card')} stroke={cc.plan} strokeWidth={1.7} />
         ))}
         {amsOnLine.map((m, i) => (
-          <circle key={`ams-${i}`} cx={m.x} cy={m.y} r={5} fill={cv('card')} stroke={cv('ink-900')} strokeWidth={1.7} />
+          <circle key={`ams-${i}`} cx={m.x} cy={m.y} r={5} fill={cv('card')} stroke={cc.actual} strokeWidth={1.7} />
         ))}
         {showSeries.forecast && fmsPts.map((m, i) => (
-          <circle key={`fms-${i}`} cx={m.x} cy={m.y} r={5} fill={cv('card')} stroke="#dc2626" strokeWidth={1.7} />
+          <circle key={`fms-${i}`} cx={m.x} cy={m.y} r={5} fill={cv('card')} stroke={cc.forecast} strokeWidth={1.7} />
         ))}
 
         {/* 글자는 clip 밖에 두어 플롯 가장자리에서 잘리지 않게 */}
@@ -932,7 +936,7 @@ export function ProgressChart({
                 const L = placeMsLabel(m, box, todayX, actY)
                 if (L.hideLbl) return null
                 return (
-                  <text key={`fmsl-${i}`} x={L.tx} y={L.ty} fontSize={11} fontWeight={400} fill="#dc2626" textAnchor={L.anchor}>
+                  <text key={`fmsl-${i}`} x={L.tx} y={L.ty} fontSize={11} fontWeight={400} fill={cc.forecast} textAnchor={L.anchor}>
                     {L.name}
                   </text>
                 )
@@ -949,7 +953,7 @@ export function ProgressChart({
               y={PAD.t + 11}
               fontSize={12}
               fontWeight={400}
-              fill="#3b82f6"
+              fill={cc.today}
               textAnchor={todayNearRight ? 'end' : todayNearLeft ? 'start' : 'middle'}
             >
               오늘
@@ -1046,32 +1050,32 @@ export function ProgressChart({
       {/* 범례 */}
       <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px] text-ink-700 mt-3 pt-3 border-t border-slate-200">
         {showSeries.baseline && viz.pts.baseline.length > 0 && (
-          <span className="flex items-center gap-1.5"><span className="w-4 h-0 border-t border-dashed inline-block" style={{ borderColor: '#3b82f6' }} /> Baseline (최초 계획)</span>
+          <span className="flex items-center gap-1.5"><span className="w-4 h-0 border-t border-dashed inline-block" style={{ borderColor: cc.baseline }} /> Baseline (최초 계획)</span>
         )}
         {showSeries.plan && (
           <span className="flex items-center gap-1.5">
-            <span className="w-4 border-t border-dotted border-slate-400 inline-block" /> 계획
+            <span className="w-4 border-t border-dotted inline-block" style={{ borderColor: cc.plan }} /> 계획
           </span>
         )}
         <span className="flex items-center gap-1.5">
-          <span className="w-5 h-0 border-t-[2px] border-solid border-ink-900 inline-block" /> 실제
+          <span className="w-5 h-0 border-t-[2px] border-solid inline-block" style={{ borderColor: cc.actual }} /> 실제
         </span>
         {showSeries.forecast && viz.pts.forecast.length > 0 && (
           <span className="flex items-center gap-1.5">
-            <span className="w-4 border-t border-dotted inline-block" style={{ borderColor: '#dc2626' }} /> 예측 (지연 반영)
+            <span className="w-4 border-t border-dotted inline-block" style={{ borderColor: cc.forecast }} /> 예측 (지연 반영)
           </span>
         )}
         {showSeries.plan && msPts.length > 0 && (
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full inline-block bg-card" style={{ border: '1.7px solid rgb(var(--slate-400))' }} /> 계획 마일스톤</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full inline-block bg-card" style={{ border: `1.7px solid ${cc.plan}` }} /> 계획 마일스톤</span>
         )}
         {amsOnLine.length > 0 && (
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full inline-block bg-card" style={{ border: '1.7px solid rgb(var(--ink-900))' }} /> 실제 마일스톤</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full inline-block bg-card" style={{ border: `1.7px solid ${cc.actual}` }} /> 실제 마일스톤</span>
         )}
         {showSeries.forecast && fmsPts.length > 0 && (
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full inline-block bg-card" style={{ border: '1.7px solid #dc2626' }} /> 예측 마일스톤</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full inline-block bg-card" style={{ border: `1.7px solid ${cc.forecast}` }} /> 예측 마일스톤</span>
         )}
         {delayRegion && showSeries.forecast && (
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-slate-400/30 ring-1 ring-slate-400 inline-block" /> 지연 구간</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 inline-block ring-1" style={{ background: hexWithAlpha(cc.delay, 0.28), borderColor: cc.delay }} /> 지연 구간</span>
         )}
       </div>
     </>

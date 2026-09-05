@@ -25,12 +25,6 @@ function Protected({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-function AdminOnly({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth()
-  if (user?.role_name !== 'System Administrator') return <Navigate to="/projects" replace />
-  return <>{children}</>
-}
-
 export default function App() {
   const { refreshMe } = useAuth()
   useEffect(() => {
@@ -55,7 +49,7 @@ export default function App() {
         <Route path="/challenges" element={<Challenges />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/manual" element={<Manual />} />
-        <Route path="/settings" element={<AdminOnly><Settings /></AdminOnly>} />
+        <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

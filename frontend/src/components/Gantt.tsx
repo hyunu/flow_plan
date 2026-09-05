@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Dependency, Task } from '../api/types'
 import { TreeConnector, TreeToggle, buildGroupedTaskTree, type TaskRow } from '../lib/taskTree'
+import { useDisplay } from '../auth/DisplayContext'
+import { chartColors, formatDelay, hexWithAlpha } from '../lib/displayPrefs'
+import { CriticalBadge } from './ui'
 import { IconLayout } from './icons'
 const DAY = 86400000
 const ROW_H = 36
@@ -54,6 +57,8 @@ interface RenderRow {
 }
 
 export function Gantt({ tasks, dependencies, onSelect }: Props) {
+  const { prefs } = useDisplay()
+  const cc = chartColors(prefs.colors)
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [hoverId, setHoverId] = useState<number | null>(null)
   const [tipPos, setTipPos] = useState({ x: 0, y: 0 })
@@ -343,19 +348,19 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
           <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
-            <span className="w-3 h-1.5 rounded bg-slate-400" /> Baseline
+            <span className="w-3 h-1.5 rounded" style={{ background: cc.baseline }} /> Baseline
           </span>
           <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
-            <span className="w-3 h-1.5 rounded bg-slate-500" /> 계획
+            <span className="w-3 h-1.5 rounded" style={{ background: cc.plan }} /> 계획
           </span>
           <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
-            <span className="w-3 h-1.5 rounded bg-ink-900" /> 진척
+            <span className="w-3 h-1.5 rounded" style={{ background: cc.actual }} /> 진척
           </span>
           <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
-            <span className="w-3 h-1.5 rounded bg-slate-400/70 ring-1 ring-dashed ring-slate-500" /> 예측
+            <span className="w-3 h-1.5 rounded ring-1 ring-dashed" style={{ background: hexWithAlpha(cc.forecast, 0.45), borderColor: cc.forecast }} /> 예측
           </span>
           <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
-            <span className="w-3 h-1.5 rounded bg-slate-400 ring-2 ring-ink-900" /> 크리티컬
+            <span className="w-3 h-1.5 rounded ring-2" style={{ background: hexWithAlpha(cc.critical, 0.45), boxShadow: `0 0 0 2px ${cc.critical}` }} /> 크리티컬
           </span>
           </div>
           <div className="flex items-center gap-0.5">
@@ -466,7 +471,9 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                   <span className="shrink-0 text-[10px] text-slate-400">({childCounts.get(r.row!.task.id)})</span>
                 )}
                 {r.row!.task.is_critical && (
-                  <span className="ml-auto shrink-0 badge bg-red-50 text-red-500 ring-1 ring-red-200">CP</span>
+                  <span className="ml-auto shrink-0">
+                    <CriticalBadge />
+                  </span>
                 )}
               </div>
             ),
@@ -519,8 +526,8 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
             {/* 오늘 */}
             {todayX > 0 && todayX < W && (
               <g>
-                <line x1={todayX} y1={0} x2={todayX} y2={H} stroke={cv('ink-900')} strokeWidth={1.4} strokeDasharray="4,3" opacity={0.85} />
-                <rect x={todayX - 15} y={AXIS_H + 3} width={30} height={15} rx={7.5} fill={cv('ink-900')} />
+                <line x1={todayX} y1={0} x2={todayX} y2={H} stroke={cc.today} strokeWidth={1.4} strokeDasharray="4,3" opacity={0.85} />
+                <rect x={todayX - 15} y={AXIS_H + 3} width={30} height={15} rx={7.5} fill={cc.today} />
                 <text x={todayX} y={AXIS_H + 14} fontSize={9} fontWeight={700} fill={cv('card')} textAnchor="middle" fontFamily={FONT}>
                   오늘
                 </text>
@@ -548,6 +555,14 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
               const plan = bar(netStart(t), netEnd(t))
               const actual = bar(t.actual_start, t.actual_end)
               const fx = parse(t.forecast_finish)
+              const late = (t.delay_days ?? 0) > 0
+              const planFill = t.is_critical
+                ? hexWithAlpha(cc.critical, 0.42)
+                : late
+                  ? hexWithAlpha(cc.delay, 0.38)
+                  : hexWithAlpha(cc.plan, 0.5)
+              const planStroke = t.is_critical ? cc.critical : late ? cc.delay : cc.plan
+              const doneFill = t.status === 'completed' ? cc.actual : t.is_issue ? cc.issue : cc.actual
 
               return (
                 <g
@@ -561,7 +576,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                   {hovered && <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill={cv('slate-400')} opacity={0.16} pointerEvents="none" />}
 
                   {/* Baseline */}
-                  {baseline && <rect x={baseline.x} y={y + 7} width={baseline.w} height={5} rx={2.5} fill={cv('slate-400')} />}
+                  {baseline && <rect x={baseline.x} y={y + 7} width={baseline.w} height={5} rx={2.5} fill={cc.baseline} opacity={0.7} />}
 
                   {/* 예측 연장 */}
                   {plan && fx != null && fx > plan.x + plan.w && (
@@ -571,9 +586,8 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                       width={Math.min(fx - plan.x - plan.w + DAY_W, DAY_W * 4)}
                       height={h + 2}
                       rx={5}
-                      fill={cv('slate-400')}
-                      opacity={0.35}
-                      stroke={cv('slate-500')}
+                      fill={hexWithAlpha(cc.forecast, 0.28)}
+                      stroke={cc.forecast}
                       strokeWidth={1}
                       strokeDasharray="3,2"
                     />
@@ -583,7 +597,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                   {plan && (
                     <g>
                       {isParent ? (
-                        <rect x={plan.x} y={y - 2} width={plan.w} height={h + 4} rx={7} fill={cv('slate-400')} stroke={cv('slate-600')} strokeWidth={1.3} />
+                        <rect x={plan.x} y={y - 2} width={plan.w} height={h + 4} rx={7} fill={planFill} stroke={planStroke} strokeWidth={1.3} />
                       ) : (
                         <rect
                           x={plan.x}
@@ -591,9 +605,9 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                           width={plan.w}
                           height={h}
                           rx={6}
-                          fill={t.is_critical ? cv('slate-400') : cv('slate-500')}
-                          stroke={t.is_critical ? cv('ink-900') : cv('slate-600')}
-                          strokeWidth={t.is_critical ? 1.6 : 1}
+                          fill={planFill}
+                          stroke={planStroke}
+                          strokeWidth={t.is_critical ? 1.8 : 1.1}
                         />
                       )}
                       {/* 진척 채움 */}
@@ -604,8 +618,8 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                           width={Math.max((plan.w - 3) * (t.effective_progress / 100), 0)}
                           height={h - 3}
                           rx={5}
-                          fill={t.is_issue ? cv('slate-600') : cv('ink-900')}
-                          opacity={t.is_issue ? 0.85 : 0.92}
+                          fill={doneFill}
+                          opacity={0.92}
                         />
                       )}
                       <text
@@ -626,7 +640,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
 
                   {/* 실제 구간 */}
                   {actual && (
-                    <rect x={actual.x} y={y - 2} width={actual.w} height={h + 4} rx={6} fill="none" stroke={cv('ink-700')} strokeWidth={1.4} strokeDasharray="3,2" />
+                    <rect x={actual.x} y={y - 2} width={actual.w} height={h + 4} rx={6} fill="none" stroke={cc.actual} strokeWidth={1.4} strokeDasharray="3,2" />
                   )}
                 </g>
               )
@@ -635,7 +649,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
             {/* 의존성 연결 — 바 위에 그려 시작점/끝점이 바에 가리지 않게 */}
             {edges.map((e, i) => {
               const crit = e.critical
-              const stroke = cv(crit ? 'chart-mark' : 'ink-700')
+              const stroke = crit ? cc.critical : cc.plan
               const r = crit ? 6.5 : 5
               return (
                 <g key={`edge${i}`} pointerEvents="none" opacity={crit ? 1 : 0.92}>
@@ -690,7 +704,9 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                 <span className="text-slate-400 shrink-0">가능 시작</span>
                 <span className="font-medium text-white">
                   {fmtDate(hoverTask.early_start)} ~ {fmtDate(hoverTask.early_finish)}
-                  {hoverTask.is_critical ? <span className="ml-1 text-slate-400">CP</span> : null}
+                  {hoverTask.is_critical ? (
+                    <span className="ml-1 text-slate-400">{prefs.labels.critical}</span>
+                  ) : null}
                 </span>
               </div>
             )}
@@ -711,9 +727,14 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
             <div className="flex gap-1.5">
               <span className="text-slate-400 shrink-0">진척</span>
               <span className="font-medium text-white">{Math.round(hoverTask.effective_progress)}%</span>
-              {hoverTask.delay_days != null && hoverTask.delay_days > 0 && (
-                <span className="text-red-300">지연 +{hoverTask.delay_days}일</span>
-              )}
+              {prefs.showDelay &&
+                hoverTask.delay_days != null &&
+                hoverTask.delay_days > 0 &&
+                formatDelay(hoverTask.delay_days, prefs.delayFormat, prefs.labels.delayed) && (
+                  <span style={{ color: prefs.colors.delayed }}>
+                    {formatDelay(hoverTask.delay_days, prefs.delayFormat, prefs.labels.delayed)}
+                  </span>
+                )}
             </div>
             {hoverTask.forecast_finish && (
               <div className="flex gap-1.5">

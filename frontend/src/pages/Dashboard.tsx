@@ -17,7 +17,7 @@ import {
 import { ProgressChart } from '../components/ProgressChart'
 import { AISummary } from '../components/AISummary'
 import { Skeleton, SkeletonCard, SkeletonCircle, SkeletonRow, SkeletonText } from '../components/Skeleton'
-import { Badge, EmptyState, InfoTip, PanelHeader, ProgressBar, StatCard, StatusBadge } from '../components/ui'
+import { Badge, DelayMark, EmptyState, InfoTip, PanelHeader, ProgressBar, StatCard, StatusBadge } from '../components/ui'
 
 export function Dashboard() {
   const { id } = useParams()
@@ -347,7 +347,7 @@ export function Dashboard() {
                   className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-red-50/60 hover:bg-red-50 transition-colors"
                 >
                   <span className="text-[13px] text-ink-700 truncate">{t.title}</span>
-                  <span className="badge bg-red-100 text-red-600 shrink-0">+{t.delay_days}일</span>
+                  <DelayMark days={t.delay_days} />
                 </button>
               ))}
             </div>
@@ -446,7 +446,7 @@ data.issues.length > 0 ? (
                   <div className="text-sm font-bold text-ink-900">{Math.round(u.workload_hours)}h</div>
                   <div className="flex gap-1 mt-0.5 justify-end">
                     {u.delayed_tasks > 0 && <Badge tone="red">{u.delayed_tasks} 지연</Badge>}
-                    {u.critical_tasks > 0 && <Badge tone="blue">CP {u.critical_tasks}</Badge>}
+                    {u.critical_tasks > 0 && <Badge tone="blue">크리티컬 {u.critical_tasks}</Badge>}
                   </div>
                 </div>
               </Link>

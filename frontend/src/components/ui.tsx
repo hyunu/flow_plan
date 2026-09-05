@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom'
+import { useDisplay } from '../auth/DisplayContext'
+import { badgeChrome, badgeRadius, formatDelay, type StatusKey } from '../lib/displayPrefs'
 
 export function InfoTip({
   text,
@@ -102,51 +104,112 @@ export function StatCard({
 }
 
 export function ProgressBar({ value, className = '' }: { value: number; className?: string }) {
+  const { prefs } = useDisplay()
   const v = Math.max(0, Math.min(100, value))
-  const color = v >= 100 ? 'bg-ink-900' : v >= 60 ? 'bg-slate-600' : v >= 30 ? 'bg-slate-500' : 'bg-slate-400'
+  const h = prefs.progressStyle === 'thick' ? 'h-2.5' : prefs.progressStyle === 'medium' ? 'h-2' : 'h-1.5'
+  const fill =
+    v >= 100 ? prefs.colors.completed : v >= 60 ? prefs.colors.in_progress : prefs.colors.not_started
   return (
-    <div className={`h-1.5 rounded-full bg-slate-100 overflow-hidden ${className}`}>
-      <div className={`h-full rounded-full ${color} transition-all duration-500`} style={{ width: `${v}%` }} />
+    <div className={`${h} rounded-full bg-slate-100 overflow-hidden ${className}`}>
+      <div
+        className={`h-full rounded-full transition-all duration-500 ${prefs.progressStyle === 'striped' ? 'bg-[length:10px_10px]' : ''}`}
+        style={{
+          width: `${v}%`,
+          backgroundColor: fill,
+          backgroundImage:
+            prefs.progressStyle === 'striped'
+              ? 'repeating-linear-gradient(-45deg, rgba(255,255,255,.25) 0 4px, transparent 4px 8px)'
+              : undefined,
+        }}
+      />
     </div>
   )
 }
 
-export function Badge({ children, tone = 'slate' }: { children: React.ReactNode; tone?: string }) {
-  const tones: Record<string, string> = {
-    slate: 'bg-slate-100 text-slate-600',
-    green: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-    red: 'bg-red-50 text-red-600 ring-red-200',
-    amber: 'bg-amber-50 text-amber-700 ring-amber-200',
-    blue: 'bg-brand-50 text-brand-700 ring-brand-200',
-    violet: 'bg-violet-50 text-violet-600 ring-violet-200',
-  }
-  const base = 'badge ring-1'
-  return <span className={`${base} ${tones[tone] || tones.slate}`}>{children}</span>
+export function Chip({
+  hex,
+  children,
+  className = '',
+}: {
+  hex: string
+  children: React.ReactNode
+  className?: string
+}) {
+  const { prefs } = useDisplay()
+  return (
+    <span
+      className={`badge ${badgeRadius(prefs.badgeShape)} ${className}`}
+      style={badgeChrome(hex, prefs.badgeFill)}
+    >
+      {children}
+    </span>
+  )
 }
 
-const statusMap: Record<string, { label: string; tone: string }> = {
-  completed: { label: '완료', tone: 'green' },
-  in_progress: { label: '진행 중', tone: 'blue' },
-  not_started: { label: '미착수', tone: 'slate' },
-  delayed: { label: '지연', tone: 'red' },
-  blocked: { label: '차단', tone: 'red' },
+export function Badge({ children, tone = 'slate' }: { children: React.ReactNode; tone?: string }) {
+  const { prefs } = useDisplay()
+  const fallback: Record<string, string> = {
+    slate: prefs.colors.not_started,
+    green: prefs.colors.completed,
+    red: prefs.colors.delayed,
+    amber: '#d97706',
+    blue: prefs.colors.in_progress,
+    violet: prefs.colors.critical,
+  }
+  return <Chip hex={fallback[tone] || prefs.colors.not_started}>{children}</Chip>
 }
 
 export function StatusBadge({ status }: { status: string }) {
-  const m = statusMap[status] || { label: status, tone: 'slate' }
-  return <Badge tone={m.tone}>{m.label}</Badge>
+  const { prefs } = useDisplay()
+  if (!prefs.showStatus) return null
+  const key = (status in prefs.labels ? status : 'not_started') as StatusKey
+  const label = prefs.labels[key] || status
+  const hex = prefs.colors[key] || prefs.colors.not_started
+  if (status === 'completed' && prefs.doneMark === 'check') {
+    return <Chip hex={hex}>✓ {label}</Chip>
+  }
+  if (status === 'completed' && prefs.doneMark === 'muted') {
+    return <Chip hex={prefs.colors.not_started}>{label}</Chip>
+  }
+  if (status === 'completed' && prefs.doneMark === 'strike') {
+    return (
+      <Chip hex={hex}>
+        <span className="line-through decoration-2">{label}</span>
+      </Chip>
+    )
+  }
+  return <Chip hex={hex}>{label}</Chip>
 }
 
-const priorityMap: Record<string, { label: string; tone: string }> = {
-  CRITICAL: { label: '긴급', tone: 'red' },
-  WARNING: { label: '주의', tone: 'amber' },
-  ATTENTION: { label: '관심', tone: 'blue' },
-  NORMAL: { label: '정상', tone: 'slate' },
+export function DelayMark({ days }: { days?: number | null }) {
+  const { prefs } = useDisplay()
+  if (!prefs.showDelay || days == null) return <span className="text-slate-300">—</span>
+  if (days <= 0) {
+    if (!prefs.showOnTrack) return <span className="text-slate-300">—</span>
+    return <Chip hex={prefs.colors.onTrack}>{prefs.labels.onTrack}</Chip>
+  }
+  const text = formatDelay(days, prefs.delayFormat, prefs.labels.delayed)
+  if (!text) return <span className="text-slate-300">—</span>
+  return <Chip hex={prefs.colors.delayed}>{text}</Chip>
+}
+
+export function CriticalBadge() {
+  const { prefs } = useDisplay()
+  if (!prefs.showCritical) return null
+  return <Chip hex={prefs.colors.critical}>{prefs.labels.critical}</Chip>
+}
+
+const priorityMap: Record<string, { label: string; colorKey: 'delayed' | 'critical' | 'in_progress' | 'not_started' }> = {
+  CRITICAL: { label: '긴급', colorKey: 'delayed' },
+  WARNING: { label: '주의', colorKey: 'critical' },
+  ATTENTION: { label: '관심', colorKey: 'in_progress' },
+  NORMAL: { label: '정상', colorKey: 'not_started' },
 }
 
 export function PriorityBadge({ priority }: { priority: string }) {
-  const m = priorityMap[priority] || { label: priority, tone: 'slate' }
-  return <Badge tone={m.tone}>{m.label}</Badge>
+  const { prefs } = useDisplay()
+  const m = priorityMap[priority] || { label: priority, colorKey: 'not_started' as const }
+  return <Chip hex={prefs.colors[m.colorKey]}>{m.label}</Chip>
 }
 
 export function PanelHeader({

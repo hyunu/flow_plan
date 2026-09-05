@@ -56,7 +56,7 @@ export function Manual() {
             ['report', '리포트 · 이메일'],
             ['challenge', '오늘의 챌린지'],
             ['permission', '권한 · 역할'],
-            ['settings', '관리자 설정'],
+            ['settings', '설정'],
             ['scenario', '실무 활용 시나리오'],
             ['faq', 'FAQ · 문제 해결'],
           ].map(([id, label], i) => (
@@ -377,11 +377,12 @@ export function Manual() {
       {/* 10. 설정 */}
       <section id="settings" className="scroll-mt-24">
         <div className="card p-6">
-          <PanelHeader title="10. 관리자 설정" icon={<IconShield size={15} />} />
+          <PanelHeader title="10. 설정" icon={<IconShield size={15} />} />
           <div className="text-sm text-slate-600 leading-relaxed space-y-2">
-            <p>좌측 탭으로 구성되어 있으며 관리자만 접근할 수 있습니다.</p>
+            <p>좌측 메뉴의 설정에서 화면 표시를 바꿀 수 있습니다. 관리자 탭은 관리자만 보입니다.</p>
             <ul className="space-y-1.5">
-              <Li><b>사용자 관리</b> — 사용자 생성, 역할 변경, 계정 활성화/비활성화.</Li>
+              <Li><b>화면 표시</b> — 완료·지연·크리티컬 패스의 이름·색·배지 모양, 지연 표기(+N일 등), 완료 표시, 진행 막대, 밀도. 이 브라우저에만 저장됩니다.</Li>
+              <Li><b>사용자 관리</b> — 사용자 생성, 역할 변경, 계정 활성화/비활성화. (관리자)</Li>
               <Li><b>권한 설정</b> — 역할별 20종 권한을 체크박스로 부여/회수. 저장 즉시 반영됩니다.</Li>
               <Li><b>이메일(SMTP)</b> — 리포트 발송에 사용하는 메일 서버(호스트·포트·계정·암호·보안 방식)를 설정합니다.</Li>
               <Li><b>리포트 발송</b> — 데일리/주간 리포트의 이메일 발송 토글을 관리합니다.</Li>
