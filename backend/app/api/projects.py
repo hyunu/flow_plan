@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
@@ -55,10 +55,56 @@ def create_project(
     db.add(project)
     db.flush()
     db.add(ProjectCalendar(project_id=project.id, daily_work_hours=8.0, work_days="0,1,2,3,4"))
+    db.add(ProjectMember(project_id=project.id, user_id=project.manager_id or user.id, role_in_project="manager"))
     audit(db, user.id, "create", "Project", project.id, reason="프로젝트 생성")
     db.commit()
     db.refresh(project)
     return project
+
+
+@router.post("/restore", response_model=ProjectRead)
+def restore_project(
+    body: dict,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_perm(db, user, "project.create")
+    from app.services.project_backup import import_project
+
+    try:
+        project = import_project(db, body, user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit(db, user.id, "restore", "Project", project.id, reason="프로젝트 복원")
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+@router.post("/restore-file", response_model=ProjectRead)
+async def restore_project_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    import json
+
+    require_perm(db, user, "project.create")
+    raw = await file.read()
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="JSON 파일을 읽을 수 없습니다.") from exc
+    return restore_project(body, db, user)
+
+
+@router.get("/{project_id}/backup")
+def backup_project(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    project = get_project_or_403(db, project_id, user)
+    require_perm(db, user, "project.edit", project)
+    from app.services.project_backup import export_project
+
+    return export_project(db, project)
 
 
 @router.get("/{project_id}", response_model=ProjectDetail)

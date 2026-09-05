@@ -4,6 +4,7 @@ import { useAuth } from './auth/AuthContext'
 import { Layout } from './components/Layout'
 import { Login } from './pages/Login'
 import { Projects } from './pages/Projects'
+import { ProjectManage } from './pages/ProjectManage'
 import { Dashboard } from './pages/Dashboard'
 import { Schedule } from './pages/Schedule'
 import { TaskDetail } from './pages/TaskDetail'
@@ -43,6 +44,7 @@ export default function App() {
       >
         <Route path="/" element={<Navigate to="/projects" replace />} />
         <Route path="/projects" element={<Projects />} />
+        <Route path="/projects/manage" element={<ProjectManage />} />
         <Route path="/projects/:id" element={<Dashboard />} />
         <Route path="/projects/:id/schedule" element={<Schedule />} />
         <Route path="/tasks/:id" element={<TaskDetail />} />

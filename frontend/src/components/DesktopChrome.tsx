@@ -27,7 +27,47 @@ function api() {
     move_to: (x: number, y: number) => Promise<void>
     resize_to: (w: number, h: number) => Promise<void>
     get_desktop_prefs?: () => Promise<{ api_base?: string }>
+    save_text?: (suggested: string, content: string) => Promise<{ ok: boolean; path?: string; cancelled?: boolean; error?: string }>
   } } }).pywebview?.api
+}
+
+export async function saveJsonFile(filename: string, text: string): Promise<{ ok: boolean; path?: string; cancelled?: boolean }> {
+  const desk = api()?.save_text
+  if (desk) {
+    const r = await desk(filename, text)
+    if (r.cancelled) return { ok: false, cancelled: true }
+    if (!r.ok) throw new Error(r.error || '저장 실패')
+    return { ok: true, path: r.path }
+  }
+  const picker = (window as unknown as {
+    showSaveFilePicker?: (opts: {
+      suggestedName: string
+      types: { description: string; accept: Record<string, string[]> }[]
+    }) => Promise<{
+      name: string
+      createWritable: () => Promise<{ write: (t: string) => Promise<void>; close: () => Promise<void> }>
+    }>
+  }).showSaveFilePicker
+  if (picker) {
+    const handle = await picker({
+      suggestedName: filename,
+      types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+    })
+    const writable = await handle.createWritable()
+    await writable.write(text)
+    await writable.close()
+    return { ok: true, path: handle.name }
+  }
+  const blob = new Blob([text], { type: 'application/octet-stream' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+  return { ok: true }
 }
 
 function isInteractive(el: EventTarget | null) {

@@ -47,6 +47,71 @@ class DesktopApi:
         config.update_prefs(api_base=config.normalize_api_base(url))
         return self.get_desktop_prefs()
 
+    def save_text(self, suggested: str, content: str) -> dict:
+        """저장 경로를 고르게 한 뒤 텍스트 파일을 쓴다."""
+        import threading
+        from pathlib import Path
+
+        import webview
+
+        w = self.window
+        if w is None:
+            return {"ok": False, "error": "창이 없습니다."}
+        name = (suggested or "backup.json").replace("/", "-").replace("\\", "-")
+        if not name.endswith(".json"):
+            name += ".json"
+        box: dict = {}
+        done = threading.Event()
+
+        def _go() -> None:
+            try:
+                kind = getattr(getattr(webview, "FileDialog", None), "SAVE", None)
+                if kind is None:
+                    kind = getattr(webview, "SAVE_DIALOG", 10)
+                home = str(Path.home() / "Downloads")
+                if not Path(home).is_dir():
+                    home = str(Path.home())
+                res = w.create_file_dialog(
+                    kind,
+                    directory=home,
+                    save_filename=name,
+                    file_types=("JSON (*.json)",),
+                )
+                path = None
+                if res:
+                    path = res[0] if isinstance(res, (list, tuple)) else str(res)
+                if not path:
+                    box["cancelled"] = True
+                else:
+                    p = Path(str(path))
+                    if p.suffix.lower() != ".json":
+                        p = p.with_suffix(".json")
+                    p.write_text(content, encoding="utf-8")
+                    box["path"] = str(p)
+            except Exception as exc:
+                box["error"] = str(exc)
+            finally:
+                done.set()
+
+        import sys
+
+        if sys.platform == "darwin" and threading.current_thread() is not threading.main_thread():
+            try:
+                from PyObjCTools.AppHelper import callAfter
+
+                callAfter(_go)
+                if not done.wait(180):
+                    return {"ok": False, "error": "저장 대화상자가 응답하지 않습니다."}
+            except Exception:
+                _go()
+        else:
+            _go()
+        if box.get("error"):
+            return {"ok": False, "error": box["error"]}
+        if box.get("cancelled"):
+            return {"ok": False, "cancelled": True}
+        return {"ok": True, "path": box.get("path") or ""}
+
     def hide(self) -> None:
         from windowutil import hide_window
 

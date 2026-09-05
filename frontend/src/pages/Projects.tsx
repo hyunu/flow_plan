@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { http } from '../api/client'
 import type { Project } from '../api/types'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth, useCan } from '../auth/AuthContext'
 import { IconChevronRight } from '../components/icons'
 import { SkeletonCard, SkeletonText } from '../components/Skeleton'
 
@@ -12,7 +12,9 @@ export function Projects() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const isAdmin = user?.role_name === 'System Administrator'
-  const canCreate = isAdmin || user?.role_name === 'Project Manager'
+  const can = useCan()
+  const canCreate = can('project.create')
+  const canManage = canCreate || can('project.delete') || can('project.edit')
 
   const [name, setName] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -53,11 +55,18 @@ export function Projects() {
             {isAdmin ? '시스템 관리자 — 전체 프로젝트 조회 가능' : '참여 중인 프로젝트'}
           </p>
         </div>
-        {canCreate && (
-          <button className="btn-primary" onClick={() => setShowForm((v) => !v)}>
-            + 새 프로젝트
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {canManage && (
+            <Link to="/projects/manage" className="btn-secondary">
+              프로젝트 관리
+            </Link>
+          )}
+          {canCreate && (
+            <button className="btn-primary" onClick={() => setShowForm((v) => !v)}>
+              + 새 프로젝트
+            </button>
+          )}
+        </div>
       </div>
 
       {showForm && (

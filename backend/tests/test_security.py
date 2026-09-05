@@ -208,6 +208,22 @@ def test_audit_log_not_exposed_to_member(client, member):
     assert r.status_code == 403
 
 
+def test_project_backup_restore(client, admin):
+    h = _auth(admin["access_token"])
+    listed = client.get("/projects", headers=h)
+    assert listed.status_code == 200
+    pid = listed.json()[0]["id"]
+    bak = client.get(f"/projects/{pid}/backup", headers=h)
+    assert bak.status_code == 200
+    data = bak.json()
+    assert data["kind"] == "flowplan.project"
+    assert data["tasks"]
+    data["project"]["name"] = "복원 테스트"
+    r = client.post("/projects/restore", headers=h, json=data)
+    assert r.status_code == 200, r.text
+    assert r.json()["name"] == "복원 테스트"
+
+
 def test_setup_blocked_when_users_exist(client):
     r = client.get("/auth/setup-status")
     assert r.status_code == 200
