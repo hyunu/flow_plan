@@ -81,6 +81,7 @@ function linkifyTasks(text: string, catalog: { id: number; title: string }[]): R
 
 function Line({ item, catalog }: { item: LineItem; catalog: { id: number; title: string }[] }) {
   const id = toId(item.task_id)
+  void catalog
   return (
     <span>
       {typeof item.impact_days === 'number' && item.impact_days > 0 && (

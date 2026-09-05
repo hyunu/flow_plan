@@ -423,7 +423,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
           >
             Task
           </div>
-          {renderRows.map((r, idx) =>
+          {renderRows.map((r) =>
             r.kind === 'group' ? (
               <div
                 key={`g${r.gid}`}
