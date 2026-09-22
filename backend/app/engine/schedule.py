@@ -202,6 +202,11 @@ def run_schedule_engine(
     for t in tasks:
         if t.id not in nodes:
             continue
+        # 완료 태스크는 남은 작업이 없으므로 예측 네트워크에서 제외한다.
+        # 남겨두면 선행 진행 중 태스크의 지연이 완료 태스크의 네트워크 EF로 전파되어
+        # 완료 태스크에 예측 연장/지연이 표시되고 프로젝트 완료 예측도 과장된다.
+        if t.status == "completed":
+            continue
         progress = t.effective_progress
         ff = _forecast_finish_for_task(t, project_cal, today, progress)
         if ff and ff > t.plan_end:

@@ -31,6 +31,12 @@ def ensure_schema():
     if "permissions" not in cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE roles ADD COLUMN permissions TEXT"))
+    if "tasks" in insp.get_table_names():
+        tcols = {c["name"] for c in insp.get_columns("tasks")}
+        if "progress_is_manual" not in tcols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN progress_is_manual BOOLEAN DEFAULT 0"))
+                conn.execute(text("UPDATE tasks SET progress_is_manual = 0 WHERE progress_is_manual IS NULL"))
     if "notifications" in insp.get_table_names():
         ncols = {c["name"] for c in insp.get_columns("notifications")}
         if "is_hidden" not in ncols:

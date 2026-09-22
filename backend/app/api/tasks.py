@@ -226,6 +226,10 @@ def update_task(task_id: int, body: TaskUpdate, db: Session = Depends(get_db), u
         if val is not None:
             setattr(task, field_name, val)
 
+    # effective_progress를 명시적으로 지정하면 수동 보정으로 취급해 자동 계산으로 덮어쓰지 않는다.
+    if body.effective_progress is not None:
+        task.progress_is_manual = True
+
     audit(db, user.id, "update", "Task", task.id, reason=body.change_reason, after=task.plan_end)
     db.commit()
     apply_engine_progress(db, task.project)

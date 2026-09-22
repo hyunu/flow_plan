@@ -131,3 +131,24 @@ def test_schedule_engine_no_dependencies_independent():
     assert t1.delay_days == 0
     t2 = next(t for t in r.tasks if t.task_id == 2)
     assert t2.delay_days >= 0
+
+
+def test_completed_task_drops_forecast_drift():
+    """완료 태스크는 남은 작업이 없으므로 예측 네트워크에서 제외되어,
+    완료 태스크 자체와 후속 태스크에 선행 지연이 전파되지 않는다."""
+    cal = _cal()
+    tasks = [
+        _task(1, date(2026, 9, 1), date(2026, 9, 2), 48, 50, status="in_progress"),
+        _task(2, date(2026, 9, 8), date(2026, 9, 10), 24, 100, status="completed"),
+        _task(3, date(2026, 9, 15), date(2026, 9, 17), 24, 0, status="in_progress"),
+    ]
+    deps = [(1, 2, "FS", 0), (2, 3, "FS", 0)]
+    # task1: 오늘(09-02) 50%, 남은 24h → 09-04까지 → 계획(09-02)보다 지연 발생
+    r = run_schedule_engine(tasks, deps, cal, today=date(2026, 9, 2))
+    t1 = next(t for t in r.tasks if t.task_id == 1)
+    assert t1.delay_days > 0  # 진행 중 태스크는 여전히 지연
+    t2 = next(t for t in r.tasks if t.task_id == 2)
+    assert t2.forecast_finish == date(2026, 9, 10)  # plan_end, 선행 지연 미전파
+    assert t2.delay_days == 0
+    t3 = next(t for t in r.tasks if t.task_id == 3)
+    assert t3.forecast_finish == date(2026, 9, 17)  # 완료 태스크를 통한 드리프트 배제

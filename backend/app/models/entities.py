@@ -121,6 +121,7 @@ class Task(Base):
     work_progress: Mapped[float] = mapped_column(Float, default=0)  # 시스템 자동(작업량 기준)
     user_adjustment: Mapped[float] = mapped_column(Float, default=0)  # 사용자 보정 (-100~100)
     effective_progress: Mapped[float] = mapped_column(Float, default=0)  # 최종
+    progress_is_manual: Mapped[bool] = mapped_column(Boolean, default=False)  # 사용자가 effective를 수동 지정
 
     # Issue 정보
     is_issue: Mapped[bool] = mapped_column(Boolean, default=False)

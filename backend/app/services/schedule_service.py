@@ -73,7 +73,7 @@ def _aggregate_parents(tasks: list[Task]) -> None:
         # 작업량 가중 평균 진척률
         total_w = sum(max(c.workload, 1.0) for c in children)
         agg_progress = sum(c.effective_progress * max(c.workload, 1.0) for c in children) / total_w if total_w else 0
-        if parent.user_adjustment == 0:
+        if not parent.progress_is_manual:
             parent.effective_progress = round(min(100.0, max(0.0, agg_progress)), 1)
         plan_starts = [c.plan_start for c in children if c.plan_start]
         plan_ends = [c.plan_end for c in children if c.plan_end]
@@ -149,8 +149,8 @@ def apply_engine_progress(db: Session, project: Project, today: date | None = No
         task = by_id.get(tr.task_id)
         if task:
             task.schedule_progress = tr.schedule_progress
-            # 유저 보정이 없으면 effective = 자동 진척률
-            if task.user_adjustment == 0:
+            # 수동 보정(progress_is_manual)이 아니면 effective = 자동 진척률 + 사용자 보정
+            if not task.progress_is_manual:
                 task.effective_progress = min(100.0, max(0.0, tr.schedule_progress + task.user_adjustment))
     db.commit()
     upsert_progress_snapshot(db, project, result, today)

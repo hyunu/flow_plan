@@ -40,12 +40,13 @@ class CPMNetwork:
     def __init__(self, nodes: dict[int, TaskNode], edges: list[Edge], cal: WorkingCalendar):
         self.nodes = nodes
         self.cal = cal
-        self.edges = edges
+        self.edges = []
         for e in edges:
-            if e.predecessor_id in nodes:
-                nodes[e.predecessor_id].successors.append(e)
-            if e.successor_id in nodes:
-                nodes[e.successor_id].predecessors.append(e)
+            if e.predecessor_id not in nodes or e.successor_id not in nodes:
+                continue
+            self.edges.append(e)
+            nodes[e.predecessor_id].successors.append(e)
+            nodes[e.successor_id].predecessors.append(e)
 
     def _sorted_ids(self) -> list[int]:
         """Topological sort(Kahn's algorithm). 사이클 시 예외."""
