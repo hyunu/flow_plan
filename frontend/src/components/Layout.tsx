@@ -78,9 +78,15 @@ export function Layout() {
   const [notifs, setNotifs] = useState<Notification[]>([])
   const [showNotifs, setShowNotifs] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === '1')
+  const [collapsed, setCollapsed] = useState(() => {
+    const saved = localStorage.getItem('sidebar_collapsed')
+    // 저장값이 없으면 화면폭 기준: 태블릿(<1280)은 접힘, PC(>=1280)는 펼침
+    return saved !== null ? saved === '1' : window.innerWidth < 1280
+  })
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
   const [mobileNav, setMobileNav] = useState(false)
+  // 모바일 드로어에서는 접힘 상태를 무시하고 항상 펼쳐진 레이아웃을 쓴다.
+  const coll = collapsed && !mobileNav
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
@@ -148,7 +154,7 @@ export function Layout() {
 
   const navLinkCls = ({ isActive }: { isActive: boolean }) =>
     `group relative flex items-center rounded-xl text-sm font-medium transition-all ${
-      collapsed ? 'justify-center w-11 h-11 mx-auto' : 'gap-3 px-3 py-2.5'
+      coll ? 'justify-center w-11 h-11 mx-auto' : 'gap-3 px-3 py-2.5'
     } ${
       isActive
         ? sbDark
@@ -160,7 +166,7 @@ export function Layout() {
     }`
 
   const sectionTitle = (text: string) =>
-    collapsed ? (
+    coll ? (
       <div className="h-2" />
     ) : (
       <div className={`px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider ${sbDark ? 'text-white/40' : 'text-slate-400'}`}>{text}</div>
@@ -170,24 +176,24 @@ export function Layout() {
     <div className="min-h-screen h-full flex">
       {/* Sidebar — 데스크톱: 고정 / 모바일: 햄버거로 여는 오버레이 드로어 */}
       <aside
-        className={`relative flex-col shrink-0 sticky top-0 h-full self-stretch transition-all duration-200 ${
+        className={`flex-col transition-all duration-200 ${
           sbDark ? 'text-white/45' : 'text-slate-500'
         } ${
           mobileNav
             ? 'fixed inset-y-0 left-0 z-50 flex w-44 shadow-2xl'
-            : `hidden lg:flex ${collapsed ? 'w-[68px]' : 'w-44'}`
+            : 'relative sticky top-0 hidden lg:flex lg:h-screen self-stretch ' + (collapsed ? 'w-[68px]' : 'w-44')
         }`}
         style={{ background: sidebarBg }}
       >
         {/* 헤더: 로고 */}
         <div
-          className={`desktop-drag relative z-20 h-16 flex items-center border-b ${sbDark ? 'border-white/5' : 'border-black/10'} ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-4'}`}
+          className={`desktop-drag relative z-20 h-16 flex items-center border-b ${sbDark ? 'border-white/5' : 'border-black/10'} ${coll ? 'justify-center px-0' : 'gap-2.5 px-4'}`}
           onPointerDown={desk ? startMove : undefined}
         >
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500 grid place-items-center text-white font-bold text-sm shadow-lg shadow-brand-900/30 shrink-0">
             F
           </div>
-          {!collapsed && (
+          {!coll && (
             <div className="min-w-0 flex-1">
               <div className={`font-semibold text-[15px] leading-tight ${sbDark ? 'text-white' : 'text-ink-900'}`}>Flow Plan</div>
               <div className="text-[11px] text-slate-500 leading-tight truncate">프로젝트 리스크 관리</div>
@@ -195,31 +201,33 @@ export function Layout() {
           )}
         </div>
 
-        <div className="absolute inset-y-0 -right-3.5 z-20 flex items-center pointer-events-none">
-          <button
-            type="button"
-            onClick={toggleCollapse}
-            aria-label={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
-            title={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
-            className="pointer-events-auto w-7 h-7 rounded-full bg-card text-slate-500 shadow-[0_1px_3px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/90 dark:ring-white/15 hover:text-ink-900 hover:ring-brand-400 transition-colors flex items-center justify-center"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
+        {!mobileNav && (
+          <div className="absolute inset-y-0 -right-3.5 z-20 flex items-center pointer-events-none">
+            <button
+              type="button"
+              onClick={toggleCollapse}
+              aria-label={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
+              title={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
+              className="pointer-events-auto w-7 h-7 rounded-full bg-card text-slate-500 shadow-[0_1px_3px_rgba(15,23,42,0.18)] ring-1 ring-slate-200/90 dark:ring-white/15 hover:text-ink-900 hover:ring-brand-400 transition-colors flex items-center justify-center"
             >
-              <path d={collapsed ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'} />
-            </svg>
-          </button>
-        </div>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d={collapsed ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'} />
+              </svg>
+            </button>
+          </div>
+        )}
 
-        <nav className={`flex-1 py-4 space-y-1 ${collapsed ? 'px-1.5' : 'px-3'}`} onClick={() => setMobileNav(false)}>
+        <nav className={`flex-1 min-h-0 overflow-y-auto py-4 space-y-1 ${coll ? 'px-1.5' : 'px-3'}`} onClick={() => setMobileNav(false)}>
           {sectionTitle('메뉴')}
           {nav.map(({ to, label, icon: Icon }) => (
             <NavLink
@@ -232,18 +240,18 @@ export function Layout() {
               onBlur={hideTip}
             >
               <Icon size={18} className={`shrink-0 ${sbDark ? 'text-white/40 group-hover:text-white/80' : 'text-slate-400 group-hover:text-ink-700'}`} />
-              {!collapsed && label}
+              {!coll && label}
             </NavLink>
           ))}
         </nav>
 
         {/* 하단 사용자 */}
-        <div className={`py-4 border-t space-y-3 ${sbDark ? 'border-white/5' : 'border-black/10'} ${collapsed ? 'px-2' : 'px-4'}`}>
-          <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3 px-1'}`}>
+        <div className={`py-4 border-t space-y-3 ${sbDark ? 'border-white/5' : 'border-black/10'} ${coll ? 'px-2' : 'px-4'}`}>
+          <div className={`flex items-center ${coll ? 'justify-center' : 'gap-3 px-1'}`}>
             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-600 to-slate-800 ring-1 ring-white/10 grid place-items-center text-white text-sm font-semibold shrink-0">
               {user?.name?.slice(0, 1)}
             </div>
-            {!collapsed && (
+            {!coll && (
               <div className="min-w-0 flex-1">
                 <div className={`text-sm font-medium truncate ${sbDark ? 'text-white' : 'text-ink-900'}`}>{user?.name}</div>
                 <span
@@ -263,10 +271,10 @@ export function Layout() {
             onBlur={hideTip}
             className={`group relative flex items-center rounded-lg text-[13px] w-full transition-colors ${
               sbDark ? 'text-white/45 hover:text-white hover:bg-white/5' : 'text-slate-500 hover:text-ink-900 hover:bg-black/5'
-            } ${collapsed ? 'justify-center w-11 h-10 mx-auto' : 'gap-2.5 px-3 py-2'}`}
+            } ${coll ? 'justify-center w-11 h-10 mx-auto' : 'gap-2.5 px-3 py-2'}`}
           >
             <IconLogout size={15} className="shrink-0" />
-            {!collapsed && '로그아웃'}
+            {!coll && '로그아웃'}
           </button>
         </div>
       </aside>
