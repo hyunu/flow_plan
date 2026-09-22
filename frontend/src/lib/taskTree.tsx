@@ -16,6 +16,43 @@ export interface TaskTree {
   childCounts: Map<number, number>
 }
 
+/** 간트/테이블 공용 상태 필터 모드 */
+export type TaskFilterMode = 'all' | 'in_progress' | 'remaining'
+
+/**
+ * 상태 기준으로 Task를 걸러내되, 그룹/부모 계층이 깨지지 않도록
+ * 매칭 태스크의 조상 체인(그룹·부모)까지 보존한다.
+ * - in_progress: status === 'in_progress'
+ * - remaining:   status !== 'completed' (남은 항목)
+ */
+export function filterTasksByStatus(tasks: Task[], mode: TaskFilterMode): Task[] {
+  if (mode === 'all') return tasks
+  const match = (t: Task) => (mode === 'in_progress' ? t.status === 'in_progress' : t.status !== 'completed')
+  const byId = new Map(tasks.map((t) => [t.id, t]))
+  const keep = new Set<number>()
+  for (const t of tasks) {
+    if (!match(t)) continue
+    let cur: Task | undefined = t
+    while (cur && !keep.has(cur.id)) {
+      keep.add(cur.id)
+      cur = cur.parent_id != null ? byId.get(cur.parent_id) : undefined
+    }
+  }
+  return tasks.filter((t) => keep.has(t.id))
+}
+
+/** 대그룹 표시 순서: Group.sort_order 기준 → 현재 태스크에 존재하는 그룹만 이름 목록으로 */
+export function buildGroupOrder(
+  groups: { id: number; name: string; sort_order: number }[],
+  tasks: Task[],
+): string[] {
+  const present = new Set(tasks.map((t) => t.group_name || '기타'))
+  return [...groups]
+    .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
+    .map((g) => g.name)
+    .filter((n) => present.has(n))
+}
+
 function bySchedule(a: Task, b: Task) {
   const sa = a.early_start || a.plan_start || ''
   const sb = b.early_start || b.plan_start || ''
@@ -115,7 +152,7 @@ export interface GroupedTree {
  * - 그룹은 1레벨 요약 노드(깊이 0), 접기/펼치기 가능
  * - collapsed에 그룹 id(음수) 또는 부모 Task id를 넣으면 해당 자식이 숨겨짐
  */
-export function buildGroupedTaskTree(tasks: Task[], collapsed: Set<number>): GroupedTree {
+export function buildGroupedTaskTree(tasks: Task[], collapsed: Set<number>, groupOrder?: string[]): GroupedTree {
   const byParent = new Map<number | null, Task[]>()
   for (const t of tasks) {
     const key = t.parent_id ?? null
@@ -124,8 +161,11 @@ export function buildGroupedTaskTree(tasks: Task[], collapsed: Set<number>): Gro
   }
   const taskHasChildren = new Set(tasks.filter((t) => t.parent_id != null).map((t) => t.parent_id!))
 
-  // 그룹 목록: 첫 등장 순서 유지, 그룹 id는 음수(태스크 id와 충돌 방지)
-  const groupNames = [...new Set(tasks.map((t) => t.group_name || '기타'))]
+  // 그룹 목록: groupOrder(있으면 우선) → 미지정 그룹은 첫 등장 순서 유지, 그룹 id는 음수(태스크 id와 충돌 방지)
+  const present = new Set(tasks.map((t) => t.group_name || '기타'))
+  const groupNames = groupOrder
+    ? [...groupOrder.filter((n) => present.has(n)), ...[...present].filter((n) => !groupOrder.includes(n))]
+    : [...present]
   const gidOf = new Map<string, number>()
   groupNames.forEach((name, i) => gidOf.set(name, -(i + 1)))
 
@@ -191,8 +231,17 @@ export function buildGroupedTaskTree(tasks: Task[], collapsed: Set<number>): Gro
 
 /** 트리 계층 연결선 — CSS 선분으로 렌더링. GitHub/MS Project 스타일:
  * 모든 노드(최상위 포함)가 루트에서부터 ├/└ 모서리로 연결된다.
- * extend=true(테이블용): 세로선을 상하로 연장해 셀 간격을 넘어 이어진다. */
-export function TreeConnector({ guides, isLast, extend = false }: { guides: boolean[]; isLast: boolean; extend?: boolean }) {
+ * extend=true(테이블용): 세로선을 상하로 연장해 셀 간격을 넘어 이어진다.
+ * isLast=true: 아래로 이어지는 세로선을 그리지 않아 해당 레벨 트렁크가 L(└)로 마감된다. */
+export function TreeConnector({
+  guides,
+  isLast,
+  extend = false,
+}: {
+  guides: boolean[]
+  isLast: boolean
+  extend?: boolean
+}) {
   const n = guides.length
   const width = n * 16 + 20
   const cx = n * 16 + 8

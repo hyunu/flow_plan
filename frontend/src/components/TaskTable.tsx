@@ -1,20 +1,44 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Task } from '../api/types'
+import type { Group, Task } from '../api/types'
 import { TreeConnector, TreeToggle, buildGroupedTaskTree } from '../lib/taskTree'
+import { useGroupDrag } from '../lib/groupDrag'
 import { IconList, IconSearch, IconUser } from './icons'
 import { useDisplay } from '../auth/DisplayContext'
+import { useCan } from '../auth/AuthContext'
 import { CriticalBadge, DelayMark, ProgressBar, StatusBadge } from './ui'
 
 interface Props {
   tasks: Task[]
+  groups?: Group[]
+  groupOrder?: string[]
+  onGroupChanged?: () => void
   userId?: number
   filter?: 'delayed' | 'unresolved'
   onSelect: (taskId: number) => void
   onUserChange?: (userId: number | null) => void
 }
 
-export function TaskTable({ tasks, userId, filter, onSelect, onUserChange }: Props) {
+export function TaskTable({
+  tasks,
+  groups = [],
+  groupOrder,
+  onGroupChanged,
+  userId,
+  filter,
+  onSelect,
+  onUserChange,
+}: Props) {
   const { prefs } = useDisplay()
+  const can = useCan()
+  const dragApi = useGroupDrag({
+    groups,
+    tasks,
+    canReorder: can('group.manage'),
+    canMoveTask: can('task.edit_basic'),
+    onChanged: onGroupChanged ?? (() => {}),
+  })
+  // GroupedTree의 그룹 행 gid는 음수(가상) → 실제 Group.id 변환
+  const groupIdByName = useMemo(() => new Map(groups.map((g) => [g.name, g.id])), [groups])
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -42,7 +66,10 @@ export function TaskTable({ tasks, userId, filter, onSelect, onUserChange }: Pro
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'ko'))
   }, [tasks])
 
-  const { rows: allRows, hasChildren, childCounts } = useMemo(() => buildGroupedTaskTree(tasks, collapsed), [tasks, collapsed])
+  const { rows: allRows, hasChildren, childCounts } = useMemo(
+    () => buildGroupedTaskTree(tasks, collapsed, groupOrder),
+    [tasks, collapsed, groupOrder],
+  )
 
   // 그룹별 Task 수 (접기와 무관하게 원본 기준 — 접힌 그룹도 실제 개수 표시)
   const groupCount = useMemo(() => {
@@ -153,9 +180,37 @@ export function TaskTable({ tasks, userId, filter, onSelect, onUserChange }: Pro
           <tbody className="divide-y divide-slate-100">
             {filtered.map((row) =>
               row.kind === 'group' ? (
-                <tr key={`g${row.gid}`} className="bg-surface-50/80 hover:bg-surface-100 transition-colors">
+                <tr
+                  key={`g${row.gid}`}
+                  draggable={groupIdByName.has(row.name) && can('group.manage')}
+                  onDragStart={(e) => {
+                    const gid = groupIdByName.get(row.name)
+                    if (gid != null) dragApi.onGroupDragStart(e, gid)
+                  }}
+                  onDragOver={(e) => {
+                    const gid = groupIdByName.get(row.name)
+                    if (gid != null) dragApi.onGroupDragOver(e, gid)
+                  }}
+                  onDragLeave={() => {
+                    const gid = groupIdByName.get(row.name)
+                    if (gid != null) dragApi.onGroupDragLeave(gid)
+                  }}
+                  onDrop={(e) => {
+                    const gid = groupIdByName.get(row.name)
+                    if (gid != null) dragApi.onGroupDrop(e, gid)
+                  }}
+                  onDragEnd={dragApi.onDragEnd}
+                  className={`bg-surface-50/80 transition-colors ${
+                    dragApi.overGid === groupIdByName.get(row.name)
+                      ? 'ring-2 ring-brand-500 ring-inset bg-brand-50/60'
+                      : dragApi.draggingTask != null && groupIdByName.has(row.name)
+                        ? 'hover:bg-brand-50/40 ring-1 ring-brand-400 ring-inset'
+                        : 'hover:bg-surface-100'
+                  } ${dragApi.draggingGroup === groupIdByName.get(row.name) ? 'opacity-50' : ''}`}
+                >
                   <td className="td !py-0">
                     <div className="flex items-center gap-1.5 min-w-[280px] min-h-[48px]">
+                      <span className="w-[10px] shrink-0" />
                       <span className="w-5 shrink-0" />
                       <TreeToggle
                         taskId={row.gid}
@@ -170,17 +225,38 @@ export function TaskTable({ tasks, userId, filter, onSelect, onUserChange }: Pro
                     </div>
                   </td>
                   <td className="td" colSpan={7}>
-                    <span className="text-xs text-slate-400">{groupCount.get(row.gid) || 0}개 Task</span>
+                    <span className="text-xs text-slate-400">
+                      {groupCount.get(row.gid) || 0}개 Task
+                      {dragApi.draggingTask != null ? ' — 드래그하여 이 그룹으로 이동' : ''}
+                    </span>
                   </td>
                 </tr>
               ) : (
                 <tr
                   key={row.task.id}
                   onClick={() => onSelect(row.task.id)}
-                  className="cursor-pointer hover:bg-surface-50 transition-colors"
+                  className={`cursor-pointer transition-colors ${
+                    dragApi.draggingTask === row.task.id ? 'opacity-40' : ''
+                  } hover:bg-surface-50`}
                 >
                   <td className="td !py-0">
                     <div className="flex items-center gap-1.5 min-w-[280px] min-h-[48px]">
+                      <span
+                        draggable={can('task.edit_basic')}
+                        onDragStart={(e) => dragApi.onTaskDragStart(e, row.task.id)}
+                        onDragEnd={dragApi.onDragEnd}
+                        className="shrink-0 cursor-grab text-slate-300 hover:text-brand-500 select-none"
+                        title="드래그하여 대그룹 이동"
+                      >
+                        <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden="true">
+                          <circle cx="3" cy="3" r="1.4" />
+                          <circle cx="7" cy="3" r="1.4" />
+                          <circle cx="3" cy="7" r="1.4" />
+                          <circle cx="7" cy="7" r="1.4" />
+                          <circle cx="3" cy="11" r="1.4" />
+                          <circle cx="7" cy="11" r="1.4" />
+                        </svg>
+                      </span>
                       <span className="text-[10px] text-slate-300 w-5 shrink-0">{row.task.is_issue ? '⚠' : ''}</span>
                       <TreeToggle
                         taskId={row.task.id}

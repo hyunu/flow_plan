@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { Dependency, Task } from '../api/types'
+import type { Dependency, Group, Task } from '../api/types'
 import { TreeConnector, TreeToggle, buildGroupedTaskTree, type TaskRow } from '../lib/taskTree'
 import { useDisplay } from '../auth/DisplayContext'
+import { useCan } from '../auth/AuthContext'
+import { useGroupDrag } from '../lib/groupDrag'
 import { chartColors, formatDelay, hexWithAlpha } from '../lib/displayPrefs'
 import { CriticalBadge } from './ui'
 import { IconLayout } from './icons'
@@ -21,6 +23,9 @@ const GROUP_TINTS = [cv('surface-100'), cv('surface-50'), cv('surface-100'), cv(
 interface Props {
   tasks: Task[]
   dependencies: Dependency[]
+  groups?: Group[]
+  groupOrder?: string[]
+  onGroupChanged?: () => void
   onSelect: (taskId: number) => void
 }
 
@@ -53,12 +58,22 @@ interface RenderRow {
   row?: TaskRow
   tint?: string
   guides?: boolean[]
-  isLast?: boolean
+  isLast: boolean
 }
 
-export function Gantt({ tasks, dependencies, onSelect }: Props) {
+export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupChanged, onSelect }: Props) {
   const { prefs } = useDisplay()
   const cc = chartColors(prefs.colors)
+  const can = useCan()
+  const dragApi = useGroupDrag({
+    groups,
+    tasks,
+    canReorder: can('group.manage'),
+    canMoveTask: can('task.edit_basic'),
+    onChanged: onGroupChanged ?? (() => {}),
+  })
+  // GroupedTree의 그룹 행 gid는 음수(가상) → 실제 Group.id 변환
+  const groupIdByName = useMemo(() => new Map(groups.map((g) => [g.name, g.id])), [groups])
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [hoverId, setHoverId] = useState<number | null>(null)
   const [tipPos, setTipPos] = useState({ x: 0, y: 0 })
@@ -152,8 +167,8 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
   }
 
   const { rows: treeRows, hasChildren, childCounts } = useMemo(
-    () => buildGroupedTaskTree(tasks, collapsed),
-    [tasks, collapsed],
+    () => buildGroupedTaskTree(tasks, collapsed, groupOrder),
+    [tasks, collapsed, groupOrder],
   )
 
   const renderRows = useMemo<RenderRow[]>(() => {
@@ -173,6 +188,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
       return {
         kind: 'task' as const,
         row: { task: r.task, depth: r.depth, guides: r.guides, isLast: r.isLast },
+        isLast: r.isLast,
       }
     })
   }, [treeRows])
@@ -423,29 +439,49 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
           >
             Task
           </div>
-          {renderRows.map((r) =>
-            r.kind === 'group' ? (
-              <div
-                key={`g${r.gid}`}
-                onClick={() => r.gid != null && toggle(r.gid)}
-                className="box-border shrink-0 overflow-hidden flex items-center gap-1.5 px-4 text-[12px] font-bold text-ink-900 cursor-pointer hover:brightness-[0.97]"
-                data-no-pan
-                style={{ height: GRP_H, backgroundColor: r.tint }}
-              >
-                <TreeToggle
-                  taskId={r.gid!}
-                  hasChildren={r.gid != null && hasChildren.has(r.gid)}
-                  collapsed={r.gid != null && collapsed.has(r.gid)}
-                  onToggle={toggle}
-                />
-                <span className="truncate">{r.label}</span>
+          {renderRows.map((r) => {
+            const realGid = r.kind === 'group' ? groupIdByName.get(r.label ?? '') : undefined
+            if (r.kind === 'group') {
+              return (
+<div
+                  key={`g${r.gid}`}
+                  onClick={() => r.gid != null && toggle(r.gid)}
+                  draggable={realGid != null && can('group.manage')}
+                  onDragStart={(e) => realGid != null && dragApi.onGroupDragStart(e, realGid)}
+                  onDragOver={(e) => realGid != null && dragApi.onGroupDragOver(e, realGid)}
+                  onDragLeave={() => realGid != null && dragApi.onGroupDragLeave(realGid)}
+                  onDrop={(e) => realGid != null && dragApi.onGroupDrop(e, realGid)}
+                  onDragEnd={dragApi.onDragEnd}
+                  className={`box-border shrink-0 overflow-hidden flex items-center gap-2 px-4 text-[12px] font-bold text-ink-900 cursor-pointer hover:brightness-[0.97] ${
+                    dragApi.overGid === realGid
+                      ? 'ring-2 ring-brand-500 ring-inset brightness-105'
+                      : dragApi.draggingTask != null && realGid != null
+                        ? 'ring-1 ring-brand-400 ring-inset'
+                        : ''
+                  } ${dragApi.draggingGroup === realGid ? 'opacity-50' : ''}`}
+                  data-no-pan
+                  style={{ height: GRP_H, backgroundColor: r.tint }}
+                  title={dragApi.draggingTask != null ? '드래그하여 이 대그룹으로 이동' : '드래그하여 대그룹 순서 변경'}
+                >
+                  <span className="w-[10px] shrink-0" />
+                  <span className="w-5 shrink-0" />
+                  <TreeToggle
+                    taskId={r.gid!}
+                    hasChildren={r.gid != null && hasChildren.has(r.gid)}
+                    collapsed={r.gid != null && collapsed.has(r.gid)}
+                    onToggle={toggle}
+                  />
+                  <TreeConnector guides={[]} isLast={r.isLast} />
+                  <span className="truncate">{r.label}</span>
                 {r.gid != null && collapsed.has(r.gid) && (
                   <span className="shrink-0 text-[10px] font-medium text-slate-400">
                     ({childCounts.get(r.gid) || 0})
                   </span>
                 )}
               </div>
-            ) : (
+              )
+            }
+            return (
               <div
                 key={`r${r.row!.task.id}`}
                 onClick={() => onSelect(r.row!.task.id)}
@@ -453,9 +489,26 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                 onMouseMove={moveTip}
                 className={`gantt-row group box-border shrink-0 overflow-hidden flex items-center gap-2 px-4 cursor-pointer border-b border-slate-50 transition-colors ${
                   hoverId === r.row!.task.id ? 'bg-brand-50/60' : 'hover:bg-slate-50'
-                }`}
+                } ${dragApi.draggingTask === r.row!.task.id ? 'opacity-40' : ''}`}
                 style={{ height: ROW_H }}
               >
+                <span
+                  data-no-pan
+                  draggable={can('task.edit_basic')}
+                  onDragStart={(e) => dragApi.onTaskDragStart(e, r.row!.task.id)}
+                  onDragEnd={dragApi.onDragEnd}
+                  className="shrink-0 cursor-grab text-slate-300 hover:text-brand-500 select-none"
+                  title="드래그하여 대그룹 이동"
+                >
+                  <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden="true">
+                    <circle cx="3" cy="3" r="1.4" />
+                    <circle cx="7" cy="3" r="1.4" />
+                    <circle cx="3" cy="7" r="1.4" />
+                    <circle cx="7" cy="7" r="1.4" />
+                    <circle cx="3" cy="11" r="1.4" />
+                    <circle cx="7" cy="11" r="1.4" />
+                  </svg>
+                </span>
                 <span className="text-[10px] text-slate-300 w-5 shrink-0">
                   {r.row!.task.is_issue ? '⚠' : ''}
                 </span>
@@ -482,7 +535,8 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                   </span>
                 )}
               </div>
-            ),
+              )
+            }
           )}
         </div>
 
@@ -561,7 +615,9 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
               const plan = bar(netStart(t), netEnd(t))
               const actual = bar(t.actual_start, t.actual_end)
               const fx = parse(t.forecast_finish)
-              const late = (t.delay_days ?? 0) > 0
+              // 남은 작업이 없으면(완료 또는 진척 100%) 지연/예측 표시를 하지 않는다.
+              const hasRemaining = (t.effective_progress ?? 0) < 100
+              const late = hasRemaining && (t.delay_days ?? 0) > 0
               const planFill = t.is_critical
                 ? hexWithAlpha(cc.critical, 0.42)
                 : late
@@ -585,7 +641,7 @@ export function Gantt({ tasks, dependencies, onSelect }: Props) {
                   {baseline && <rect x={baseline.x} y={y + 7} width={baseline.w} height={5} rx={2.5} fill={cc.baseline} opacity={0.7} />}
 
                   {/* 예측 연장 */}
-                  {plan && fx != null && fx > plan.x + plan.w && (
+                  {hasRemaining && plan && fx != null && fx > plan.x + plan.w && (
                     <rect
                       x={plan.x + plan.w}
                       y={y - 1}

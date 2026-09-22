@@ -8,6 +8,7 @@ import { TaskTable } from '../components/TaskTable'
 import { TaskFormModal } from '../components/TaskFormModal'
 import { DependencyModal } from '../components/DependencyModal'
 import { IconArrowLeft, IconFlag, IconLayout, IconList, IconLink, IconPlus, IconUser } from '../components/icons'
+import { filterTasksByStatus, buildGroupOrder, type TaskFilterMode } from '../lib/taskTree'
 import { Skeleton, SkeletonText } from '../components/Skeleton'
 
 export function Schedule() {
@@ -31,6 +32,8 @@ export function Schedule() {
   const userFilter = searchParams.get('user') ? Number(searchParams.get('user')) : null
   const f = searchParams.get('filter')
   const listFilter: 'delayed' | 'unresolved' | undefined = f === 'delayed' || f === 'unresolved' ? f : undefined
+  const s = searchParams.get('s')
+  const statusOnly: TaskFilterMode = s === 'in_progress' || s === 'remaining' ? s : 'all'
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -45,6 +48,13 @@ export function Schedule() {
     const next = new URLSearchParams(searchParams)
     next.delete('filter')
     next.set('view', 'gantt')
+    setSearchParams(next, { replace: true })
+  }
+
+  const setStatusOnly = (v: TaskFilterMode) => {
+    const next = new URLSearchParams(searchParams)
+    if (v === 'all') next.delete('s')
+    else next.set('s', v)
     setSearchParams(next, { replace: true })
   }
 
@@ -77,6 +87,8 @@ export function Schedule() {
   }
 
   useEffect(load, [projectId])
+
+  const groupOrder = tasks.length ? buildGroupOrder(groups, tasks) : []
 
   if (loading) {
     return (
@@ -167,6 +179,32 @@ export function Schedule() {
               의존성 관리
             </button>
           )}
+          <div className="flex p-1 h-9 rounded-xl bg-surface-100 ring-1 ring-slate-200" title="상태 필터">
+            {(
+              [
+                ['all', '전체'],
+                ['in_progress', '진행중'],
+                ['remaining', '남은 항목'],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setStatusOnly(k)}
+                className={`flex items-center gap-2 px-3.5 h-full rounded-lg text-sm font-medium transition-all ${
+                  statusOnly === k
+                    ? 'bg-card text-ink-900 shadow-card'
+                    : 'text-slate-500 hover:text-ink-700'
+                }`}
+              >
+                {label}
+                {k !== 'all' && (
+                  <span className="badge bg-surface-100 text-slate-500 ring-1 ring-slate-200">
+                    {tasks.filter((t) => (k === 'in_progress' ? t.status === 'in_progress' : t.status !== 'completed')).length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
           <div className="flex p-1 h-9 rounded-xl bg-surface-100 ring-1 ring-slate-200">
             <button
               onClick={() => switchView('gantt')}
@@ -195,10 +233,20 @@ export function Schedule() {
       </div>
 
       {view === 'gantt' ? (
-        <Gantt tasks={tasks} dependencies={deps} onSelect={(tid) => navigate(`/tasks/${tid}`)} />
+        <Gantt
+          tasks={filterTasksByStatus(tasks, statusOnly)}
+          dependencies={deps}
+          groups={groups}
+          groupOrder={groupOrder}
+          onGroupChanged={load}
+          onSelect={(tid) => navigate(`/tasks/${tid}`)}
+        />
       ) : (
         <TaskTable
-          tasks={tasks}
+          tasks={filterTasksByStatus(tasks, statusOnly)}
+          groups={groups}
+          groupOrder={groupOrder}
+          onGroupChanged={load}
           userId={userFilter ?? undefined}
           filter={listFilter}
           onSelect={(tid) => navigate(`/tasks/${tid}`)}
