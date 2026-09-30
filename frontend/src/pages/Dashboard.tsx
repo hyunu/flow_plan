@@ -178,7 +178,7 @@ export function Dashboard() {
           sub="작업량 가중 평균"
           icon={<IconProjects size={15} />}
           tone={data.progress_gap > 0 ? 'warn' : 'ok'}
-          delta={{ text: `${Math.abs(data.progress_gap)}%p`, dir: data.progress_gap > 0 ? 'down' : 'up' }}
+          delta={{ text: `${Math.abs(data.progress_gap)}%`, dir: data.progress_gap > 0 ? 'down' : 'up' }}
           hint="각 태스크의 실제 진척률(effective progress)을 작업량(workload)으로 가중 평균한 값입니다. 작업량이 큰 태스크가 전체 수치에 더 큰 영향을 줍니다."
         />
         <StatCard
@@ -190,11 +190,11 @@ export function Dashboard() {
         />
         <StatCard
           label="Progress Gap"
-          value={`${data.progress_gap > 0 ? '-' : '+'}${Math.abs(data.progress_gap)}%p`}
+          value={`${data.progress_gap > 0 ? '-' : '+'}${Math.abs(data.progress_gap)}%`}
           sub={data.progress_gap > 0 ? '계획 대비 지연(-)' : '계획 이상 진행(+)'}
           icon={<IconAlert size={15} />}
           tone={data.progress_gap > 0 ? 'danger' : 'ok'}
-          hint="실제 진척률 − 계획 진척률(%p)입니다. 음수(−)면 실제가 계획보다 뒤처져 지연 상태, 양수(+)면 계획 이상으로 진행 중인 상태를 뜻합니다."
+          hint="실제 진척률 − 계획 진척률입니다. 음수(−)면 실제가 계획보다 뒤처져 지연 상태, 양수(+)면 계획 이상으로 진행 중인 상태를 뜻합니다."
         />
         <StatCard
           label="지연 Task"
@@ -420,9 +420,9 @@ data.issues.length > 0 ? (
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="card p-6">
           <PanelHeader
-            title="사용자별 작업량"
+            title="사용자별 투입 작업량"
             icon={<IconUser size={15} />}
-            hint="담당자별로 배정된 작업 시간(시간)의 합계입니다. 막대는 최대 부하 담당자를 100%로 한 상대 비율이며, 지연·크리티컬 패스 담당 태스크 수도 함께 표시됩니다."
+            hint="담당자별 배정 시간과 실제 투입(완료) 시간입니다. 투입 시간 = 배정 시간 × 태스크 최종 진척률(%)로 산정한 정량적 작업량이며, 막대는 투입/배정 비율입니다. 지연·크리티컬 패스 담당 태스크 수도 함께 표시됩니다."
           />
           <div className="space-y-3">
             {data.user_workload.map((u) => (
@@ -438,12 +438,13 @@ data.issues.length > 0 ? (
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px] font-medium text-ink-700 group-hover:text-brand-600 transition-colors">{u.name}</div>
                   <ProgressBar
-                    value={Math.min(100, (u.workload_hours / Math.max(...data.user_workload.map((x) => x.workload_hours), 1)) * 100)}
+                    value={Math.min(100, (u.workload_hours > 0 ? (u.done_hours / u.workload_hours) * 100 : 0))}
                     className="mt-1"
                   />
                 </div>
                 <div className="text-right shrink-0">
-                  <div className="text-sm font-bold text-ink-900">{Math.round(u.workload_hours)}h</div>
+                  <div className="text-sm font-bold text-ink-900">{Math.round(u.done_hours)}h 투입</div>
+                  <div className="text-[11px] text-slate-500">배정 {Math.round(u.workload_hours)}h · 잔여 {Math.max(0, Math.round(u.workload_hours - u.done_hours))}h</div>
                   <div className="flex gap-1 mt-0.5 justify-end">
                     {u.delayed_tasks > 0 && <Badge tone="red">{u.delayed_tasks} 지연</Badge>}
                     {u.critical_tasks > 0 && <Badge tone="blue">크리티컬 {u.critical_tasks}</Badge>}

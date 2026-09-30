@@ -67,7 +67,6 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
   const can = useCan()
   const dragApi = useGroupDrag({
     groups,
-    tasks,
     canReorder: can('group.manage'),
     canMoveTask: can('task.edit_basic'),
     onChanged: onGroupChanged ?? (() => {}),
@@ -91,6 +90,7 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
     target: HTMLElement
   } | null>(null)
   const skipClickRef = useRef(false)
+  const justDroppedRef = useRef(false)
   const [panning, setPanning] = useState(false)
   const hoverTask = hoverId != null ? tasks.find((t) => t.id === hoverId) : undefined
 
@@ -379,6 +379,9 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
             <span className="w-3 h-1.5 rounded" style={{ background: cc.actual }} /> 진척
           </span>
           <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
+            <span className="w-3 h-1.5 rounded border border-dashed" style={{ borderColor: cc.actual }} /> 실제 구간
+          </span>
+          <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
             <span className="w-3 h-1.5 rounded ring-1 ring-dashed" style={{ background: hexWithAlpha(cc.forecast, 0.45), borderColor: cc.forecast }} /> 예측
           </span>
           <span className="flex items-center gap-1.5 h-7 shrink-0 whitespace-nowrap">
@@ -484,13 +487,42 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
             return (
               <div
                 key={`r${r.row!.task.id}`}
-                onClick={() => onSelect(r.row!.task.id)}
+                onClick={() => {
+                  if (justDroppedRef.current) {
+                    justDroppedRef.current = false
+                    return
+                  }
+                  onSelect(r.row!.task.id)
+                }}
                 onMouseEnter={(e) => enterTask(r.row!.task.id, e)}
                 onMouseMove={moveTip}
+                onDragOver={(e) => dragApi.onTaskDragOver(e, r.row!.task.id)}
+                onDragLeave={() => dragApi.onTaskDragLeave(r.row!.task.id)}
+                onDrop={(e) => {
+                  justDroppedRef.current = true
+                  dragApi.onTaskDrop(e, r.row!.task.id)
+                }}
+                title={
+                  dragApi.drag?.kind === 'task' && dragApi.drag.id !== r.row!.task.id
+                    ? dragApi.overTaskPos === 'after'
+                      ? '드래그하여 이 태스크 뒤로 정렬'
+                      : '드래그하여 이 태스크 앞으로 정렬'
+                    : undefined
+                }
                 className={`gantt-row group box-border shrink-0 overflow-hidden flex items-center gap-2 px-4 cursor-pointer border-b border-slate-50 transition-colors ${
                   hoverId === r.row!.task.id ? 'bg-brand-50/60' : 'hover:bg-slate-50'
-                } ${dragApi.draggingTask === r.row!.task.id ? 'opacity-40' : ''}`}
-                style={{ height: ROW_H }}
+                } ${dragApi.draggingTask === r.row!.task.id ? 'opacity-40' : ''} ${
+                  dragApi.overTaskId === r.row!.task.id ? 'bg-brand-50/50' : ''
+                }`}
+                style={{
+                  height: ROW_H,
+                  boxShadow:
+                    dragApi.overTaskId === r.row!.task.id
+                      ? dragApi.overTaskPos === 'after'
+                        ? 'inset 0 -3px 0 0 rgb(var(--brand-500))'
+                        : 'inset 0 3px 0 0 rgb(var(--brand-500))'
+                      : undefined,
+                }}
               >
                 <span
                   data-no-pan
@@ -520,9 +552,14 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
                 />
                 <TreeConnector guides={r.row!.guides} isLast={r.row!.isLast} />
                 <span
-                  className={`truncate ${
+                  data-no-pan
+                  draggable={can('task.edit_basic')}
+                  onDragStart={(e) => dragApi.onTaskDragStart(e, r.row!.task.id)}
+                  onDragEnd={dragApi.onDragEnd}
+                  className={`truncate cursor-grab ${
                     r.row!.depth === 0 ? 'text-[13px] font-semibold text-ink-900' : 'text-[13px] font-medium text-ink-700'
                   }`}
+                  title="드래그하여 순서 변경 / 대그룹 이동"
                 >
                   {r.row!.task.title}
                 </span>
@@ -637,7 +674,7 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
                   <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill="transparent" />
                   {hovered && <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill={cv('slate-400')} opacity={0.16} pointerEvents="none" />}
 
-                  {/* Baseline */}
+                  {/* Baseline */} 
                   {baseline && <rect x={baseline.x} y={y + 7} width={baseline.w} height={5} rx={2.5} fill={cc.baseline} opacity={0.7} />}
 
                   {/* 예측 연장 */}
@@ -700,8 +737,9 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
                     </g>
                   )}
 
-                  {/* 실제 구간 */}
-                  {actual && (
+                  {/* 실제 구간 — 실제 작업 기간이 계획과 다를 때만 점선 테두리로 표시 (범례 참고).
+                     실제=계획이면 계획 바가 그대로 실제이므로 점선을 생략해 혼란을 없앤다. */}
+                  {actual && (!plan || Math.abs(actual.x - plan.x) > 0.5 || Math.abs(actual.w - plan.w) > 0.5) && (
                     <rect x={actual.x} y={y - 2} width={actual.w} height={h + 4} rx={6} fill="none" stroke={cc.actual} strokeWidth={1.4} strokeDasharray="3,2" />
                   )}
                 </g>

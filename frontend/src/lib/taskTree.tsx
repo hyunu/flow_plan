@@ -54,6 +54,9 @@ export function buildGroupOrder(
 }
 
 function bySchedule(a: Task, b: Task) {
+  const so = a.sort_order ?? 0
+  const soB = b.sort_order ?? 0
+  if (so !== soB) return so - soB
   const sa = a.early_start || a.plan_start || ''
   const sb = b.early_start || b.plan_start || ''
   if (sa !== sb) return sa < sb ? -1 : 1

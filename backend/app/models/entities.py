@@ -116,6 +116,9 @@ class Task(Base):
     status: Mapped[str] = mapped_column(String(30), default="not_started")  # not_started | in_progress | completed | delayed | blocked
     task_type: Mapped[str] = mapped_column(String(30), default="normal")  # normal | issue | milestone
 
+    # 표시 순서 (수동 정렬) — 같은 부모·그룹 안에서 값이 작을수록 먼저. 0이면 일정 순으로 폴백
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
     # Progress (자동 계산 + 사용자 보정 분리)
     schedule_progress: Mapped[float] = mapped_column(Float, default=0)  # 시스템 자동(일정 기준)
     work_progress: Mapped[float] = mapped_column(Float, default=0)  # 시스템 자동(작업량 기준)

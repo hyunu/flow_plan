@@ -167,6 +167,15 @@ class TaskUpdate(BaseModel):
     issue_resolve_result: str | None = None
     change_reason: str | None = None
     user_opinion: str | None = None
+    sort_order: int | None = None
+
+
+class TaskReorder(BaseModel):
+    """태스크를 같은 부모·그룹 안에서 before_id(앞)/after_id(뒤) 위치로 재배치한다.
+    위치 없으면 현재 범위의 맨 뒤에, group_id를 주면 그 그룹(현재 부모 레벨) 맨 뒤로 이동한다."""
+    before_id: int | None = None
+    after_id: int | None = None
+    group_id: int | None = None
 
 
 class AssignmentCreate(BaseModel):
@@ -189,6 +198,7 @@ class TaskRead(ORMModel):
     parent_id: int | None = None
     title: str
     description: str | None = None
+    sort_order: int = 0
     baseline_start: date | None = None
     baseline_end: date | None = None
     baseline_workload: float | None = None

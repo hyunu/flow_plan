@@ -157,7 +157,7 @@ export function CopyMarkdownButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={copy}
-      className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-ink-800 px-2.5 py-1 rounded-lg bg-surface-50 ring-1 ring-slate-200/80 hover:bg-white transition-colors"
+      className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-ink-800 px-2.5 py-1 rounded-lg bg-surface-50 ring-1 ring-slate-200/80 hover:bg-card transition-colors"
       title="마크다운 원문 복사"
     >
       <IconCopy size={13} />
@@ -194,7 +194,7 @@ export function MarkdownView({ markdown }: { markdown: string }) {
                       className={`rounded-lg px-3 py-2.5 min-h-[7.5rem] ${
                         accent
                           ? 'bg-brand-50/50 ring-1 ring-brand-100/80'
-                          : 'bg-white ring-1 ring-slate-100'
+                          : 'bg-card ring-1 ring-slate-200/60'
                       }`}
                     >
                       <div

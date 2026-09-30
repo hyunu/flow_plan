@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Group, Task } from '../api/types'
 import { TreeConnector, TreeToggle, buildGroupedTaskTree } from '../lib/taskTree'
 import { useGroupDrag } from '../lib/groupDrag'
@@ -32,7 +32,6 @@ export function TaskTable({
   const can = useCan()
   const dragApi = useGroupDrag({
     groups,
-    tasks,
     canReorder: can('group.manage'),
     canMoveTask: can('task.edit_basic'),
     onChanged: onGroupChanged ?? (() => {}),
@@ -40,6 +39,7 @@ export function TaskTable({
   // GroupedTree의 그룹 행 gid는 음수(가상) → 실제 Group.id 변환
   const groupIdByName = useMemo(() => new Map(groups.map((g) => [g.name, g.id])), [groups])
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
+  const justDroppedRef = useRef(false)
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [userFilter, setUserFilter] = useState<number | null>(userId ?? null)
@@ -234,10 +234,45 @@ export function TaskTable({
               ) : (
                 <tr
                   key={row.task.id}
-                  onClick={() => onSelect(row.task.id)}
+                  onClick={() => {
+                    if (justDroppedRef.current) {
+                      justDroppedRef.current = false
+                      return
+                    }
+                    onSelect(row.task.id)
+                  }}
+                  onDragOver={(e) => dragApi.onTaskDragOver(e, row.task.id)}
+                  onDragLeave={() => dragApi.onTaskDragLeave(row.task.id)}
+                  onDrop={(e) => {
+                    justDroppedRef.current = true
+                    dragApi.onTaskDrop(e, row.task.id)
+                  }}
+                  title={
+                    dragApi.drag?.kind === 'task' && dragApi.drag.id !== row.task.id
+                      ? dragApi.overTaskPos === 'after'
+                        ? '드래그하여 이 태스크 뒤로 정렬'
+                        : '드래그하여 이 태스크 앞으로 정렬'
+                      : undefined
+                  }
+                  style={
+                    dragApi.overTaskId === row.task.id
+                      ? {
+                          boxShadow:
+                            dragApi.overTaskPos === 'after'
+                              ? 'inset 0 -3px 0 0 rgb(var(--brand-500))'
+                              : 'inset 0 3px 0 0 rgb(var(--brand-500))',
+                        }
+                      : undefined
+                  }
                   className={`cursor-pointer transition-colors ${
                     dragApi.draggingTask === row.task.id ? 'opacity-40' : ''
-                  } hover:bg-surface-50`}
+                  } ${
+                    dragApi.overTaskId === row.task.id
+                      ? 'bg-brand-50/50'
+                      : dragApi.overGid === null && dragApi.draggingTask != null
+                        ? 'opacity-70 hover:bg-surface-50'
+                        : 'hover:bg-surface-50'
+                  }`}
                 >
                   <td className="td !py-0">
                     <div className="flex items-center gap-1.5 min-w-[280px] min-h-[48px]">
@@ -266,11 +301,15 @@ export function TaskTable({
                       />
                       <TreeConnector guides={row.guides} isLast={row.isLast} extend />
                       <span
-                        className={`truncate ${
+                        draggable={can('task.edit_basic')}
+                        onDragStart={(e) => dragApi.onTaskDragStart(e, row.task.id)}
+                        onDragEnd={dragApi.onDragEnd}
+                        className={`truncate cursor-grab ${
                           hasChildren.has(row.task.id)
                             ? 'text-[13px] font-semibold text-ink-900'
                             : 'text-[13px] font-medium text-ink-700'
                         } ${prefs.doneMark === 'strike' && row.task.status === 'completed' ? 'line-through text-slate-400' : ''}`}
+                        title="드래그하여 순서 변경 / 대그룹 이동"
                       >
                         {row.task.title}
                       </span>

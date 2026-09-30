@@ -37,6 +37,10 @@ def ensure_schema():
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE tasks ADD COLUMN progress_is_manual BOOLEAN DEFAULT 0"))
                 conn.execute(text("UPDATE tasks SET progress_is_manual = 0 WHERE progress_is_manual IS NULL"))
+        if "sort_order" not in tcols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN sort_order INTEGER DEFAULT 0"))
+                conn.execute(text("UPDATE tasks SET sort_order = 0 WHERE sort_order IS NULL"))
     if "notifications" in insp.get_table_names():
         ncols = {c["name"] for c in insp.get_columns("notifications")}
         if "is_hidden" not in ncols:

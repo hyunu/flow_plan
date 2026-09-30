@@ -28,7 +28,7 @@ function ReportCard({
 }) {
   return (
     <article className={`card overflow-hidden ${featured ? 'ring-1 ring-brand-100' : ''}`}>
-      <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-surface-50/80 to-white">
+      <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-surface-50/80 to-card">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="badge bg-ink-900 text-white">{kicker}</span>
@@ -185,7 +185,7 @@ export function Reports() {
               key={key}
               onClick={() => setTab(key)}
               className={`px-3.5 py-1.5 text-[13px] font-semibold rounded-[10px] transition-colors ${
-                tab === key ? 'bg-white text-ink-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                tab === key ? 'bg-card text-ink-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
               {label}

@@ -149,6 +149,9 @@ def apply_engine_progress(db: Session, project: Project, today: date | None = No
         task = by_id.get(tr.task_id)
         if task:
             task.schedule_progress = tr.schedule_progress
+            # 엔진의 작업량 기준 진척(완료=100)을 저장. 그 안에 사용자 보정이 포함되어 있어도
+            # 별도 저장되는 user_adjustment와 충돌하지 않는다.
+            task.work_progress = tr.work_progress
             # 수동 보정(progress_is_manual)이 아니면 effective = 자동 진척률 + 사용자 보정
             if not task.progress_is_manual:
                 task.effective_progress = min(100.0, max(0.0, tr.schedule_progress + task.user_adjustment))

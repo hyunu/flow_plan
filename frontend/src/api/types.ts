@@ -75,6 +75,7 @@ export interface Task {
   actual_end?: string
   status: string
   task_type: string
+  sort_order?: number
   schedule_progress: number
   work_progress: number
   user_adjustment: number
@@ -160,7 +161,7 @@ export interface DashboardData {
   critical_path: { task_id: number; title: string; delay_days: number; total_float: number }[]
   delayed_tasks: { task_id: number; title: string; delay_days: number; forecast_finish?: string }[]
   issues: { id: number; title: string; status: string; resolve_plan_date?: string; cause?: string; solution?: string }[]
-  user_workload: { user_id: number; name: string; workload_hours: number; delayed_tasks: number; critical_tasks: number; issue_tasks: number }[]
+  user_workload: { user_id: number; name: string; workload_hours: number; done_hours: number; delayed_tasks: number; critical_tasks: number; issue_tasks: number }[]
   recent_changes: { task_id: number; changed_at: string; reason?: string; before_end?: string; after_end?: string }[]
   ai_summary?: string
 }

@@ -75,12 +75,16 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
     )
     issues = db.query(Task).filter_by(project_id=project.id, is_issue=True, is_deleted=False).all()
 
-    # 사용자별 작업량
+    # 사용자별 작업량 — 배정 시간(workload_hours)과 진척률 기반 실제 투입 시간(done_hours) 산정.
+    # 투입 시간 = Σ 배정 시간 × 태스크 최종 진척률(%). 태스크가 여러 명 담당이면 배정 비율대로 배분한다.
     user_load: dict[int, dict] = {}
+    eff = {tr.task_id: tr.effective_progress for tr in result.tasks}
     for t in db.query(Task).filter_by(project_id=project.id, is_deleted=False).all():
+        pct = eff.get(t.id, t.effective_progress or 0.0)
         for a in t.assignments:
-            entry = user_load.setdefault(a.user_id, {"user_id": a.user_id, "name": a.user.name if a.user else "", "workload_hours": 0.0, "delayed_tasks": 0, "critical_tasks": 0, "issue_tasks": 0})
+            entry = user_load.setdefault(a.user_id, {"user_id": a.user_id, "name": a.user.name if a.user else "", "workload_hours": 0.0, "done_hours": 0.0, "delayed_tasks": 0, "critical_tasks": 0, "issue_tasks": 0})
             entry["workload_hours"] += a.workload_hours
+            entry["done_hours"] += a.workload_hours * (pct / 100.0)
     for tr in result.tasks:
         task = db.get(Task, tr.task_id)
         if not task:

@@ -648,6 +648,22 @@ export function ProgressChart({
     setPanning(false)
   }
 
+  const actualLinePts = useMemo(() => {
+    const withOrigin = (() => {
+      if (snapPts.length === 0) return viz.pts.actual
+      const first = viz.pts.actual[0]
+      if (!first) return snapPts
+      // 스냅샷이 min보다 늦게 시작하면 그 전 구간은 actualCum(첫 점)으로 시작해
+      // 첫 스냅샷 점으로 연결한다. 첫 스냅샷과 같은 위치면 스냅샷만 사용해 정확히 따라간다.
+      const firstSnapX = snapPts[0].x
+      if (first.x < firstSnapX - 0.5) return [first, ...snapPts]
+      return snapPts
+    })()
+    if (!todayPt) return withOrigin
+    const body = withOrigin.filter((p) => Math.abs(p.x - todayPt.x) > 0.5)
+    return [...body, todayPt]
+  }, [snapPts, viz.pts.actual, todayPt])
+
   const hoverInfo = useMemo(() => {
     if (!hover || totalWork <= 0) return null
     const idx = (arr: number[] | null) => {
@@ -658,6 +674,14 @@ export function ProgressChart({
     const d = new Date(hover.ts)
     const dateLabel = `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`
     const rows: { label: string; value: string; color: string }[] = []
+    // 실제선(actualLinePts)의 y → %. 기록된 스냅샷을 잇는 선과 hover 값을 일치시킨다.
+    const actualAt = (ts: number): number | null => {
+      if (actualLinePts.length === 0) return idx(actualCum)
+      const xAt = PAD.l + ((ts - min) / (max - min)) * plotW
+      const y = yAlong(actualLinePts, xAt)
+      if (y == null) return null
+      return Math.min(100, Math.max(0, ((H - PAD.b - y) / plotH) * 100))
+    }
     if (showSeries.baseline && baseCum) {
       const v = idx(baseCum)
       if (v != null) rows.push({ label: '최초계획', value: `${v.toFixed(1)}%`, color: cc.baseline })
@@ -668,9 +692,8 @@ export function ProgressChart({
     }
     {
       const actTs = hover.ts <= todayTs ? hover.ts : todayTs
-      const i = Math.min(Math.max(Math.round((actTs - min) / DAY), 0), actualCum.length - 1)
-      const v = Math.min(100, Math.max(0, (actualCum[i] / totalWork) * 100))
-      rows.push({ label: '실적', value: `${v.toFixed(1)}%`, color: cc.actual })
+      const v = actualAt(actTs)
+      if (v != null) rows.push({ label: '실적', value: `${v.toFixed(1)}%`, color: cc.actual })
     }
     if (showSeries.forecast && hover.ts >= todayTs && foreCum) {
       const v = idx(foreCum)
@@ -684,7 +707,7 @@ export function ProgressChart({
       .filter((m) => Math.abs(m.ts - hover.ts) < DAY * 1.5)
       .map((m) => m.name)
     return { dateLabel, rows, marks: [...new Set(marks)] }
-  }, [hover, totalWork, min, planCum, baseCum, actualCum, foreCum, showSeries, todayTs, amsPts, msPts, fmsPts, cc])
+  }, [hover, totalWork, min, max, planCum, baseCum, actualCum, foreCum, showSeries, todayTs, amsPts, msPts, fmsPts, cc, actualLinePts, plotH, plotW])
   const zoomAround = (factor: number, anchorTs?: number) => {
     if (factor < 1 && domain == null) return
     const span = effMax - effMin
@@ -762,19 +785,6 @@ export function ProgressChart({
     pts.length
       ? `${linearPath(pts)} L ${pts[pts.length - 1].x} ${sy(0)} L ${pts[0].x} ${sy(0)} Z`
       : ''
-
-  const actualLinePts = useMemo(() => {
-    const withOrigin = (() => {
-      if (snapPts.length === 0) return viz.pts.actual
-      const first = viz.pts.actual[0]
-      if (!first) return snapPts
-      const sameStart = Math.abs(first.x - snapPts[0].x) < 0.5 && Math.abs(first.y - snapPts[0].y) < 0.5
-      return sameStart ? snapPts : [first, ...snapPts]
-    })()
-    if (!todayPt) return withOrigin
-    const body = withOrigin.filter((p) => Math.abs(p.x - todayPt.x) > 0.5)
-    return [...body, todayPt]
-  }, [snapPts, viz.pts.actual, todayPt])
 
   const amsOnLine = useMemo(
     () =>

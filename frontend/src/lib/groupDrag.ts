@@ -1,41 +1,26 @@
 import { useState } from 'react'
 import { http } from '../api/client'
 import type { DragEvent } from 'react'
-import type { Group, Task } from '../api/types'
+import type { Group } from '../api/types'
 
 /** 대그룹 재배열/태스크 그룹 이동을 위한 네이티브 HTML5 DnD 훅 (라이브러리 불필요) */
 export function useGroupDrag(opts: {
   groups: Group[]
-  tasks: Task[]
   canReorder: boolean
   canMoveTask: boolean
   onChanged: () => void
 }) {
-  const { groups, tasks, canReorder, canMoveTask, onChanged } = opts
+  const { groups, canReorder, canMoveTask, onChanged } = opts
   const [drag, setDrag] = useState<{ kind: 'group' | 'task'; id: number } | null>(null)
   const [overGid, setOverGid] = useState<number | null>(null)
+  const [overTaskId, setOverTaskId] = useState<number | null>(null)
+  const [overTaskPos, setOverTaskPos] = useState<'before' | 'after' | null>(null)
 
   const clear = () => {
     setDrag(null)
     setOverGid(null)
-  }
-
-  // 자식 하위까지 포함한 task id 목록 (부모를 이동하면 하위도 함께 이동)
-  const collectWithSubtree = (taskId: number): number[] => {
-    const byParent = new Map<number, Task[]>()
-    for (const t of tasks) {
-      if (t.parent_id == null) continue
-      const arr = byParent.get(t.parent_id)
-      if (arr) arr.push(t)
-      else byParent.set(t.parent_id, [t])
-    }
-    const out: number[] = []
-    const walk = (id: number) => {
-      out.push(id)
-      for (const c of byParent.get(id) ?? []) walk(c.id)
-    }
-    walk(taskId)
-    return out
+    setOverTaskId(null)
+    setOverTaskPos(null)
   }
 
   const onGroupDragStart = (e: DragEvent, gid: number) => {
@@ -63,6 +48,38 @@ export function useGroupDrag(opts: {
   const onGroupDragLeave = (gid: number) => {
     if (overGid === gid) setOverGid(null)
   }
+  // 태스크 행 위로 드래그: 행 위 절반이면 '앞에', 아래 절반이면 '뒤에' 삽입
+  const onTaskDragOver = (e: DragEvent, taskId: number) => {
+    if (drag?.kind !== 'task' || drag.id === taskId) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (overGid !== null) setOverGid(null)
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const pos = rect.height > 0 && e.clientY >= rect.top + rect.height / 2 ? 'after' : 'before'
+    if (overTaskId !== taskId || overTaskPos !== pos) {
+      setOverTaskId(taskId)
+      setOverTaskPos(pos)
+    }
+  }
+  const onTaskDragLeave = (taskId: number) => {
+    if (overTaskId === taskId) {
+      setOverTaskId(null)
+      setOverTaskPos(null)
+    }
+  }
+  const onTaskDrop = async (e: DragEvent, taskId: number) => {
+    e.preventDefault()
+    const d = drag
+    const pos = overTaskPos
+    clear()
+    if (!d || d.kind !== 'task' || d.id === taskId) return
+    try {
+      await http.put(`/tasks/${d.id}/order`, pos === 'after' ? { after_id: taskId } : { before_id: taskId })
+      onChanged()
+    } catch {
+      onChanged()
+    }
+  }
   const onGroupDrop = async (e: DragEvent, gid: number) => {
     e.preventDefault()
     const d = drag
@@ -86,12 +103,8 @@ export function useGroupDrag(opts: {
           }),
         )
       } else {
-        const ids = collectWithSubtree(d.id)
-        await Promise.all(
-          ids.map((id) =>
-            http.put(`/tasks/${id}`, { group_id: gid, change_reason: '그룹 이동 (드래그)' }),
-          ),
-        )
+        // 태스크 → 그룹 맨 뒤로 이동 (같은 부모 레벨 유지, 순서는 그 그룹 끝에 붙임)
+        await http.put(`/tasks/${d.id}/order`, { group_id: gid })
       }
       onChanged()
     } catch {
@@ -105,6 +118,8 @@ export function useGroupDrag(opts: {
   return {
     drag,
     overGid,
+    overTaskId,
+    overTaskPos,
     draggingGroup,
     draggingTask,
     onGroupDragStart,
@@ -112,6 +127,9 @@ export function useGroupDrag(opts: {
     onGroupDragOver,
     onGroupDragLeave,
     onGroupDrop,
+    onTaskDragOver,
+    onTaskDragLeave,
+    onTaskDrop,
     onDragEnd: clear,
   }
 }

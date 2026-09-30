@@ -20,6 +20,7 @@ from app.schemas import (
     TaskCreate,
     TaskDetail,
     TaskRead,
+    TaskReorder,
     TaskUpdate,
 )
 from app.engine.schedule import TaskResult
@@ -168,6 +169,10 @@ def get_task(task_id: int, db: Session = Depends(get_db), user: User = Depends(g
             detail.is_critical = tr.is_critical
             detail.plan_start = tr.early_start or task.plan_start
             detail.plan_end = tr.early_finish or task.plan_end
+            # 엔진 결과(완료=100 강제 등)를 우선해 상세 화면의 진척 카드를 항상 일치시킨다.
+            detail.schedule_progress = tr.schedule_progress
+            detail.work_progress = tr.work_progress
+            detail.effective_progress = tr.effective_progress
             break
     return detail
 
@@ -220,7 +225,7 @@ def update_task(task_id: int, body: TaskUpdate, db: Session = Depends(get_db), u
         "title", "description", "group_id", "parent_id", "plan_start", "plan_end", "workload",
         "status", "task_type", "actual_start", "actual_end", "user_adjustment", "effective_progress",
         "is_issue", "issue_symptom", "issue_cause", "issue_impact", "issue_solution",
-        "issue_resolve_plan_date", "issue_resolve_actual_date", "issue_resolve_result",
+        "issue_resolve_plan_date", "issue_resolve_actual_date", "issue_resolve_result", "sort_order",
     ]:
         val = getattr(body, field_name)
         if val is not None:
@@ -232,6 +237,71 @@ def update_task(task_id: int, body: TaskUpdate, db: Session = Depends(get_db), u
 
     audit(db, user.id, "update", "Task", task.id, reason=body.change_reason, after=task.plan_end)
     db.commit()
+    apply_engine_progress(db, task.project)
+    return _to_read(task, db)
+
+
+@router.put("/{task_id}/order", response_model=TaskRead)
+def reorder_task(task_id: int, body: TaskReorder, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """태스크를 같은 부모·그룹의 before_id 바로 앞(형제) 위치로 재배치한다.
+    before_id가 다른 부모/그룹에 속하면 그리로 소속을 바꾸며 이동한다."""
+    task = _load_task(db, task_id, user, perm="task.edit_basic")
+    before = db.get(Task, body.before_id) if body.before_id else None
+    after = db.get(Task, body.after_id) if body.after_id else None
+    anchor = before or after
+    if before is not None and after is not None:
+        raise HTTPException(status_code=400, detail="before_id와 after_id는 하나만 지정할 수 있습니다.")
+    if anchor is not None and anchor.is_deleted:
+        raise HTTPException(status_code=400, detail="이동 대상 Task를 찾을 수 없습니다.")
+    if anchor is not None and anchor.project_id != task.project_id:
+        raise HTTPException(status_code=400, detail="다른 프로젝트의 Task로는 이동할 수 없습니다.")
+
+    if anchor is not None:
+        # 자기 후손으로 이동하면 계층 순환이 생기므로 차단한다.
+        anc = anchor.parent_id
+        guard = 0
+        while anc is not None and guard < 200:
+            if anc == task.id:
+                raise HTTPException(status_code=400, detail="자신의 하위 Task 아래로는 이동할 수 없습니다.")
+            anc = db.get(Task, anc).parent_id if db.get(Task, anc) else None
+            guard += 1
+        new_parent = anchor.parent_id
+        new_group = anchor.group_id
+    elif body.group_id is not None:
+        new_parent = task.parent_id
+        new_group = body.group_id
+    else:
+        new_parent = task.parent_id
+        new_group = task.group_id
+
+    # 대상 범위(같은 부모+그룹)의 형제 순서를 수집
+    siblings = (
+        db.query(Task)
+        .filter(
+            Task.parent_id == new_parent,
+            Task.group_id == new_group,
+            Task.is_deleted.is_(False),
+            Task.id != task.id,
+        )
+        .order_by(Task.sort_order, Task.id)
+        .all()
+    )
+    order = [s.id for s in siblings]
+    if before is not None and before.id in order:
+        order.insert(order.index(before.id), task.id)
+    elif after is not None and after.id in order:
+        order.insert(order.index(after.id) + 1, task.id)
+    else:
+        order.append(task.id)
+
+    task.group_id = new_group
+    task.parent_id = new_parent
+    for i, sid in enumerate(order):
+        db.query(Task).filter_by(id=sid).update({"sort_order": (i + 1) * 10}, synchronize_session=False)
+    task.sort_order = order.index(task.id) * 10 + 10
+    audit(db, user.id, "reorder", "Task", task.id, reason="순서 변경 (드래그)")
+    db.commit()
+    db.refresh(task)
     apply_engine_progress(db, task.project)
     return _to_read(task, db)
 
