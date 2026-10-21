@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 
@@ -14,6 +16,7 @@ from app.models.entities import (
 from app.schemas import (
     AssignmentCreate,
     AssignmentRead,
+    ChangeImpact,
     ProgressUpdateCreate,
     ProgressUpdateRead,
     ScheduleChangeRead,
@@ -24,7 +27,13 @@ from app.schemas import (
     TaskUpdate,
 )
 from app.engine.schedule import TaskResult
-from app.services.schedule_service import apply_engine_progress, compute_project_schedule
+from app.services.schedule_service import (
+    apply_engine_progress,
+    build_change_impact,
+    compute_project_schedule,
+    display_finishes,
+    snapshot_forecast,
+)
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -199,27 +208,42 @@ def update_task(task_id: int, body: TaskUpdate, db: Session = Depends(get_db), u
     for p in needed:
         require_perm(db, user, p, task.project)
 
-    # 일정 변경 이력 기록
+    # 일정 변경 이력 기록 + 변경 전 상태 캡처(영향 비교용)
     schedule_changed = (
         body.plan_start is not None and body.plan_start != task.plan_start
     ) or (body.plan_end is not None and body.plan_end != task.plan_end) or (
         body.workload is not None and body.workload != task.workload
     )
+    before_result = None
+    before_finishes = None
+    task_state_before: dict = {}
     if schedule_changed:
-        db.add(
-            ScheduleChange(
-                task_id=task.id,
-                before_start=task.plan_start,
-                before_end=task.plan_end,
-                after_start=body.plan_start if body.plan_start is not None else task.plan_start,
-                after_end=body.plan_end if body.plan_end is not None else task.plan_end,
-                before_workload=task.workload,
-                after_workload=body.workload if body.workload is not None else task.workload,
-                changed_by=user.id,
-                reason=body.change_reason,
-                user_opinion=body.user_opinion,
-            )
+        # 변경이 엔진에 반영되기 "전" 결과를 계산해 두어야 before/after 비교가 가능하다.
+        before_result = compute_project_schedule(db, task.project)
+        before_finishes = display_finishes(db, task.project, before_result)
+        task_state_before = {
+            "plan_start": task.plan_start,
+            "plan_end": task.plan_end,
+            "workload": task.workload,
+        }
+        # 변경 전 예측 스냅샷 — 대시보드의 "이전 예측" 오버레이가 이 행을 참조한다.
+        snapshot_forecast(db, task.project, before_result)
+
+    change_row: ScheduleChange | None = None
+    if schedule_changed:
+        change_row = ScheduleChange(
+            task_id=task.id,
+            before_start=task.plan_start,
+            before_end=task.plan_end,
+            after_start=body.plan_start if body.plan_start is not None else task.plan_start,
+            after_end=body.plan_end if body.plan_end is not None else task.plan_end,
+            before_workload=task.workload,
+            after_workload=body.workload if body.workload is not None else task.workload,
+            changed_by=user.id,
+            reason=body.change_reason,
+            user_opinion=body.user_opinion,
         )
+        db.add(change_row)
 
     for field_name in [
         "title", "description", "group_id", "parent_id", "plan_start", "plan_end", "workload",
@@ -237,8 +261,31 @@ def update_task(task_id: int, body: TaskUpdate, db: Session = Depends(get_db), u
 
     audit(db, user.id, "update", "Task", task.id, reason=body.change_reason, after=task.plan_end)
     db.commit()
-    apply_engine_progress(db, task.project)
-    return _to_read(task, db)
+    after_result = apply_engine_progress(db, task.project)
+
+    # 변경 전/후 결과 비교 → 영향 저장(이력 project_impact) 및 응답 impact 반환
+    impact: ChangeImpact | None = None
+    if schedule_changed and change_row is not None and before_result is not None and before_finishes is not None:
+        impact_dict = build_change_impact(
+            before_result,
+            after_result,
+            before_finishes,
+            display_finishes(db, task.project, after_result),
+            changed_task_id=task.id,
+            task_before=task_state_before,
+            task_after={
+                "plan_start": task.plan_start,
+                "plan_end": task.plan_end,
+                "workload": task.workload,
+            },
+        )
+        change_row.project_impact = json.dumps(impact_dict, ensure_ascii=False, default=str)
+        db.commit()
+        impact = ChangeImpact.model_validate(impact_dict)
+
+    read = _to_read(task, db)
+    read.impact = impact
+    return read
 
 
 @router.put("/{task_id}/order", response_model=TaskRead)

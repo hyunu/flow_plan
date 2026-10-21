@@ -1,7 +1,8 @@
 """Schedule Service: DB 모델 ↔ Deterministic Engine 연결."""
 from __future__ import annotations
 
-from datetime import date
+import json
+from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -17,6 +18,8 @@ from app.engine.schedule import (
     run_schedule_engine,
 )
 from app.models.entities import (
+    Forecast,
+    Milestone,
     Project,
     ProjectCalendar,
     ProjectCalendarEntry,
@@ -121,6 +124,114 @@ def compute_project_schedule(db: Session, project: Project, today: date | None =
     dep_tuples = [(d.predecessor_id, d.successor_id, d.dependency_type, d.lag_days) for d in deps]
 
     return run_schedule_engine(inputs, dep_tuples, project_cal, user_cals, today=today)
+
+
+def display_finishes(db: Session, project: Project, result: ScheduleResult) -> tuple[date | None, date | None]:
+    """표시용 (계획 완료일, 예측 완료일)을 돌려준다.
+
+    완료일은 "마지막 마일스톤(end_date 있음) + 예상 지연일" 기준으로 통일하고,
+    마일스톤이 없으면 엔진 값을 그대로 쓴다. 대시보드와 일정 변경 영향(impact) 배너가
+    같은 날짜를 보이도록 하는 단일 출처."""
+    milestones = db.query(Milestone).filter_by(project_id=project.id).order_by(Milestone.sort_order).all()
+    open_ms = next((m for m in reversed(milestones) if m.end_date), None)
+    if open_ms:
+        return open_ms.end_date, open_ms.end_date + timedelta(days=result.expected_delay_days)
+    return result.project_planned_finish, result.project_forecast_finish
+
+
+#: 프로젝트당 유지하는 예측 스냅샷 개수 (대시보드 "이전 예측" 오버레이가 참조하는 최신 1건 포함)
+FORECAST_SNAPSHOT_KEEP = 10
+
+
+def snapshot_forecast(
+    db: Session,
+    project: Project,
+    result: ScheduleResult,
+    basis: str = "일정 변경 전 스냅샷",
+) -> Forecast:
+    """현재 엔진 결과를 예측 스냅샷(Forecast)으로 남긴다.
+
+    `data_used` JSON에 forecast_curve를 함께 저장해 대시보드가
+    "이전 예측 vs 지금 예측" 오버레이를 그릴 수 있게 한다. 프로젝트당 최신 N건만 유지한다."""
+    curve = [{"date": d.isoformat(), "pct": pct} for d, pct in result.forecast_curve]
+    row = Forecast(
+        project_id=project.id,
+        forecast_finish=result.project_forecast_finish,
+        expected_delay_days=result.expected_delay_days,
+        basis=basis,
+        data_used=json.dumps(
+            {
+                "planned_finish": str(result.project_planned_finish),
+                "forecast_finish": str(result.project_forecast_finish),
+                "forecast_curve": curve,
+            },
+            ensure_ascii=False,
+        ),
+    )
+    db.add(row)
+    db.commit()
+    # 유지 개수 초과분 정리 (delete()에 offset()을 못 걸므로 대상 id를 먼저 조회)
+    stale_ids = [
+        r[0]
+        for r in db.query(Forecast.id)
+        .filter_by(project_id=project.id)
+        .order_by(Forecast.created_at.desc(), Forecast.id.desc())
+        .offset(FORECAST_SNAPSHOT_KEEP)
+        .all()
+    ]
+    if stale_ids:
+        db.query(Forecast).filter(Forecast.id.in_(stale_ids)).delete(synchronize_session=False)
+        db.commit()
+    return row
+
+
+def build_change_impact(
+    before: ScheduleResult,
+    after: ScheduleResult,
+    before_finishes: tuple[date | None, date | None],
+    after_finishes: tuple[date | None, date | None],
+    changed_task_id: int,
+    task_before: dict,
+    task_after: dict,
+) -> dict:
+    """변경 전/후 엔진 결과를 비교해 영향 딕셔너리를 만든다(CP-03 계약).
+
+    - affected: 예측 완료(forecast_finish) 또는 지연일(delay_days)이 달라진 태스크
+    - newly_delayed: 그중 지연이 새로 발생(0 → 양수)한 태스크
+    """
+    b_by = {t.task_id: t for t in before.tasks}
+    affected: list[int] = []
+    newly_delayed: list[int] = []
+    for a in sorted(after.tasks, key=lambda t: t.task_id):
+        b = b_by.get(a.task_id)
+        if b is None:
+            continue
+        if a.forecast_finish != b.forecast_finish or a.delay_days != b.delay_days:
+            affected.append(a.task_id)
+            if b.delay_days <= 0 < a.delay_days:
+                newly_delayed.append(a.task_id)
+
+    planned_before, forecast_before = before_finishes
+    planned_after, forecast_after = after_finishes
+    delta = (
+        (forecast_after - forecast_before).days
+        if forecast_before is not None and forecast_after is not None
+        else 0
+    )
+    return {
+        "changed_task_id": changed_task_id,
+        "task_before": task_before,
+        "task_after": task_after,
+        "planned_before": planned_before,
+        "planned_after": planned_after,
+        "forecast_before": forecast_before,
+        "forecast_after": forecast_after,
+        "forecast_delta_days": delta,
+        "delay_days_before": before.expected_delay_days,
+        "delay_days_after": after.expected_delay_days,
+        "affected_task_ids": affected,
+        "newly_delayed_task_ids": newly_delayed,
+    }
 
 
 def upsert_progress_snapshot(db: Session, project: Project, result: ScheduleResult, today: date | None = None) -> None:

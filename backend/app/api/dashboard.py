@@ -1,6 +1,6 @@
 import json
 import threading
-from datetime import date, timedelta
+from datetime import date
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ from app.core.permissions import get_project_or_403
 from app.core.security import get_current_user
 from app.models.entities import (
     AIAnalysis,
+    Forecast,
     Milestone,
     ProgressSnapshot,
     ScheduleChange,
@@ -17,7 +18,11 @@ from app.models.entities import (
     User,
 )
 from app.services.ai_service import personalize_risk_summary
-from app.services.schedule_service import compute_project_schedule, upsert_progress_snapshot
+from app.services.schedule_service import (
+    compute_project_schedule,
+    display_finishes,
+    upsert_progress_snapshot,
+)
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -61,13 +66,7 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
 
     milestones = db.query(Milestone).filter_by(project_id=project.id).order_by(Milestone.sort_order).all()
     # 완료일은 "마지막 마일스톤(오픈)" 기준으로 통일 — 예상 완료일 = 오픈 + 예상 지연일.
-    open_ms = next((m for m in reversed(milestones) if m.end_date), None)
-    if open_ms:
-        display_planned_finish = open_ms.end_date
-        display_forecast_finish = display_planned_finish + timedelta(days=result.expected_delay_days)
-    else:
-        display_planned_finish = result.project_planned_finish
-        display_forecast_finish = result.project_forecast_finish
+    display_planned_finish, display_forecast_finish = display_finishes(db, project, result)
     delayed = [t for t in result.tasks if t.delay_days > 0]
     critical = sorted(
         [t for t in result.tasks if t.is_critical],
@@ -102,6 +101,26 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
     recent_changes = db.query(ScheduleChange).join(Task, ScheduleChange.task_id == Task.id).filter(
         Task.project_id == project.id
     ).order_by(ScheduleChange.changed_at.desc()).limit(10).all()
+
+    # 이전 예측 스냅샷(마지막 일정 변경 직전의 예측) — S-Curve "이전 예측 vs 지금 예측" 오버레이용.
+    # 곡선(forecast_curve)을 담은 행만 쓴다: 기존 수동 스냅샷(POST /forecast)은 곡선이 없다.
+    latest_forecast = (
+        db.query(Forecast)
+        .filter_by(project_id=project.id)
+        .order_by(Forecast.created_at.desc(), Forecast.id.desc())
+        .first()
+    )
+    prev_forecast_finish = None
+    prev_forecast_at = None
+    prev_forecast_curve = None
+    if latest_forecast and latest_forecast.data_used:
+        try:
+            prev_forecast_curve = json.loads(latest_forecast.data_used).get("forecast_curve")
+        except (ValueError, AttributeError, TypeError):
+            prev_forecast_curve = None
+        if prev_forecast_curve:
+            prev_forecast_finish = latest_forecast.forecast_finish
+            prev_forecast_at = latest_forecast.created_at
 
     latest_analysis = db.query(AIAnalysis).filter_by(project_id=project.id, analysis_type="risk").order_by(AIAnalysis.created_at.desc()).first()
     needs_ai = latest_analysis is None
@@ -168,8 +187,12 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
         "user_workload": list(user_load.values()),
         "recent_changes": [
             {"task_id": c.task_id, "changed_at": c.changed_at, "reason": c.reason,
+             "before_start": c.before_start, "after_start": c.after_start,
              "before_end": c.before_end, "after_end": c.after_end}
             for c in recent_changes
         ],
+        "prev_forecast_finish": prev_forecast_finish,
+        "prev_forecast_at": prev_forecast_at,
+        "prev_forecast_curve": prev_forecast_curve,
         "ai_summary": ai_summary,
     }

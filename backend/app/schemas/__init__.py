@@ -191,6 +191,38 @@ class AssignmentRead(ORMModel):
     user_name: str | None = None
 
 
+class TaskScheduleState(BaseModel):
+    """일정 변경 순간의 태스크 계획값 스냅샷(impact의 before/after 비교용)."""
+
+    plan_start: date | None = None
+    plan_end: date | None = None
+    workload: float | None = None
+
+
+class ChangeImpact(BaseModel):
+    """일정 변경 직후 계산한 영향. 변경 전/후 엔진 결과 비교에서 만든다.
+
+    - forecast_* : 표시 완료일(마지막 마일스톤 기준, 없으면 엔진 값)
+    - forecast_delta_days : 달력일 차이(after - before)
+    - delay_days_* : 프로젝트 예상 지연일(계획 완료 ↔ 예측 완료)
+    - affected_task_ids : 예측 완료 또는 지연일이 달라진 태스크
+    - newly_delayed_task_ids : 그중 지연이 새로 발생한 태스크
+    """
+
+    changed_task_id: int
+    task_before: TaskScheduleState
+    task_after: TaskScheduleState
+    planned_before: date | None = None
+    planned_after: date | None = None
+    forecast_before: date | None = None
+    forecast_after: date | None = None
+    forecast_delta_days: int = 0
+    delay_days_before: int = 0
+    delay_days_after: int = 0
+    affected_task_ids: list[int] = []
+    newly_delayed_task_ids: list[int] = []
+
+
 class TaskRead(ORMModel):
     id: int
     project_id: int
@@ -225,6 +257,8 @@ class TaskRead(ORMModel):
     early_finish: date | None = None
     forecast_finish: date | None = None
     total_float: float | None = None
+    # 일정 변경 응답에만 채워지는 영향 정보(변경 이력/배너용)
+    impact: ChangeImpact | None = None
 
 
 class TaskDetail(TaskRead):
