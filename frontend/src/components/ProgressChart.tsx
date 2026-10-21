@@ -25,6 +25,9 @@ interface Props {
   milestones?: { name: string; end_date?: string; progress: number }[]
   planCurve?: { date: string; pct: number }[]
   forecastCurve?: { date: string; pct: number }[]
+  /** 마지막 일정 변경 직전 예측 스냅샷 — "이전 예측 vs 지금 예측" 오버레이 */
+  prevForecastCurve?: { date: string; pct: number }[]
+  prevForecastFinish?: string
   progressSnapshots?: { date: string; actual: number; plan: number }[]
   onRefresh?: () => void
 }
@@ -142,6 +145,8 @@ export function ProgressChart({
   milestones = [],
   planCurve,
   forecastCurve,
+  prevForecastCurve,
+  prevForecastFinish,
   progressSnapshots,
   onRefresh,
 }: Props) {
@@ -185,10 +190,11 @@ export function ProgressChart({
     }
     rangeDates.push(t(plannedFinish) ?? todayTs)
     if (forecastFinish) rangeDates.push(t(forecastFinish)!)
+    if (prevForecastFinish) rangeDates.push(t(prevForecastFinish)!)
     const min = startOfDay(Math.min(...rangeDates))
     const max = startOfDay(Math.max(...rangeDates))
     return { min, max: max <= min ? min + DAY : max }
-  }, [tasks, plannedFinish, forecastFinish])
+  }, [tasks, plannedFinish, forecastFinish, prevForecastFinish])
 
   // 확대/축소된 날짜 구간 (null = 전체)
   const [domain, setDomain] = useState<{ min: number; max: number } | null>(null)
@@ -355,6 +361,35 @@ export function ProgressChart({
     let actToday = totalWork > 0 ? Math.min((actualCum[todayIdx] / totalWork) * 100, 100) : 0
     if (actualProgress > 0) actToday = actualProgress
 
+    /** 곡선 데이터를 날짜 단위로 보간하는 샘플러 — 현재/이전 예측 곡선에 공용으로 쓴다. */
+    const makeSampler = (map: Map<string, number> | null) => {
+      if (!map || map.size === 0) return (_day: string): number | null => null
+      const keys = [...map.keys()].sort()
+      return (day: string): number | null => {
+        if (map.has(day)) return map.get(day)!
+        let prev: string | null = null
+        let next: string | null = null
+        for (const k of keys) {
+          if (k <= day) prev = k
+          if (k >= day) {
+            next = k
+            break
+          }
+        }
+        const tp = prev ? t(prev) : null
+        const tn = next ? t(next) : null
+        const td = t(day)
+        if (prev && next && tp != null && tn != null && td != null && tn !== tp) {
+          const v0 = map.get(prev)!
+          const v1 = map.get(next)!
+          return v0 + ((v1 - v0) * (td - tp)) / (tn - tp)
+        }
+        if (prev) return map.get(prev)!
+        if (next) return map.get(next)!
+        return null
+      }
+    }
+
     // ④ 예측: 오늘 실제에서 시작. 지연된 계획 곡선을 따르되 실제 % 밑으로 내려가지 않음.
     const foreEnd = t(forecastFinish) ?? t(plannedFinish) ?? max
     const foreCum: number[] | null = foreEnd > todayTs ? cumArr() : null
@@ -369,31 +404,7 @@ export function ProgressChart({
         forecastCurve && forecastCurve.length > 0
           ? new Map(forecastCurve.map((c) => [c.date, c.pct]))
           : null
-      const fKeys = backendFore ? [...backendFore.keys()].sort() : []
-      const sampleFore = (day: string): number | null => {
-        if (!backendFore || fKeys.length === 0) return null
-        if (backendFore.has(day)) return backendFore.get(day)!
-        let prev: string | null = null
-        let next: string | null = null
-        for (const k of fKeys) {
-          if (k <= day) prev = k
-          if (k >= day) {
-            next = k
-            break
-          }
-        }
-        const tp = prev ? t(prev) : null
-        const tn = next ? t(next) : null
-        const td = t(day)
-        if (prev && next && tp != null && tn != null && td != null && tn !== tp) {
-          const v0 = backendFore.get(prev)!
-          const v1 = backendFore.get(next)!
-          return v0 + ((v1 - v0) * (td - tp)) / (tn - tp)
-        }
-        if (prev) return backendFore.get(prev)!
-        if (next) return backendFore.get(next)!
-        return null
-      }
+      const sampleFore = makeSampler(backendFore)
       for (let i = 0; i < nPts; i++) {
         const ts = min + i * DAY
         if (ts <= todayTs) {
@@ -412,6 +423,38 @@ export function ProgressChart({
           const span = Math.max(foreEnd - todayTs, DAY)
           foreCum[i] = todayVal + ((ts - todayTs) / span) * (totalW - todayVal)
         }
+      }
+    }
+
+    // ④-이전 예측: 마지막 일정 변경 직전의 스냅샷. 오늘 이전은 현재와 같으므로 오늘 이후부터 그린다.
+    const prevBackendFore =
+      prevForecastCurve && prevForecastCurve.length > 0
+        ? new Map(prevForecastCurve.map((c) => [c.date, c.pct]))
+        : null
+    const prevEnd = t(prevForecastFinish)
+    const prevCum: number[] | null =
+      prevBackendFore && prevEnd != null && prevEnd > todayTs ? cumArr() : null
+    if (prevCum && prevBackendFore && prevEnd != null) {
+      const totalW = totalWork > 0 ? totalWork : 1
+      const todayVal =
+        todayTs >= min && todayTs <= max
+          ? (actualCum[toIdx(todayTs)] ?? 0)
+          : (actualProgress / 100) * totalW
+      const actPct = actualProgress
+      const samplePrev = makeSampler(prevBackendFore)
+      for (let i = 0; i < nPts; i++) {
+        const ts = min + i * DAY
+        if (ts <= todayTs) {
+          prevCum[i] = todayVal
+          continue
+        }
+        if (ts >= prevEnd) {
+          prevCum[i] = totalW
+          continue
+        }
+        const raw = samplePrev(dayKey(ts))
+        const pct = raw == null ? actPct : Math.max(actPct, raw)
+        prevCum[i] = (Math.min(100, pct) / 100) * totalW
       }
     }
 
@@ -558,6 +601,10 @@ export function ProgressChart({
     if (todayPt && forecastPts.length > 0) {
       forecastPts[0] = { x: todayPt.x, y: todayPt.y }
     }
+    const prevPts = prevCum && prevEnd != null ? toPts(prevCum, 0, prevEnd, todayTs, 0) : []
+    if (todayPt && prevPts.length > 0) {
+      prevPts[0] = { x: todayPt.x, y: todayPt.y }
+    }
 
     return {
       min, max, todayTs, totalWork, planCum, baseCum, actualCum, foreCum,
@@ -567,9 +614,10 @@ export function ProgressChart({
         plan: toPts(planCum, 0, planDrawEnd, firstRise(planCum)),
         actual: toPts(actualCum, 0, todayTs, min),
         forecast: forecastPts,
+        prevForecast: prevPts,
       },
     }
-  }, [tasks, plannedFinish, forecastFinish, planEnd, milestones, planCurve, forecastCurve, progressSnapshots, actualProgress, expectedDelayDays, domain, effMin, effMax, globalRange])
+  }, [tasks, plannedFinish, forecastFinish, prevForecastCurve, prevForecastFinish, planEnd, milestones, planCurve, forecastCurve, progressSnapshots, actualProgress, expectedDelayDays, domain, effMin, effMax, globalRange])
 
   const { min, max, todayTs, totalWork, planCum, baseCum, actualCum, foreCum, actToday, delayRegion, msPts, amsPts, snapPts, fmsPts, todayPt } = viz
   const plotW = W - PAD.l - PAD.r
@@ -877,6 +925,9 @@ export function ProgressChart({
         {showSeries.plan && viz.pts.plan.length > 0 && (
           <path d={linearPath(viz.pts.plan)} stroke={cc.plan} strokeWidth={1} strokeDasharray="1.6,2.8" fill="none" />
         )}
+        {showSeries.forecast && viz.pts.prevForecast.length > 0 && (
+          <path d={linearPath(viz.pts.prevForecast)} stroke={cc.forecast} strokeWidth={1} strokeDasharray="1,4" opacity={0.55} fill="none" />
+        )}
         {showSeries.forecast && viz.pts.forecast.length > 0 && (
           <path d={linearPath(viz.pts.forecast)} stroke={cc.forecast} strokeWidth={1} strokeDasharray="1.6,2.8" fill="none" />
         )}
@@ -1080,6 +1131,12 @@ export function ProgressChart({
         {showSeries.forecast && viz.pts.forecast.length > 0 && (
           <span className="flex items-center gap-1.5">
             <span className="w-4 border-t border-dotted inline-block" style={{ borderColor: cc.forecast }} /> 예측 (지연 반영)
+          </span>
+        )}
+        {showSeries.forecast && viz.pts.prevForecast.length > 0 && (
+          <span className="flex items-center gap-1.5 text-slate-500">
+            <span className="w-4 border-t border-dotted inline-block opacity-60" style={{ borderColor: cc.forecast }} />{' '}
+            이전 예측 (변경 전 스냅샷)
           </span>
         )}
         {showSeries.plan && msPts.length > 0 && (

@@ -249,6 +249,8 @@ export function Dashboard() {
             milestones={data.milestones}
             planCurve={data.plan_curve}
             forecastCurve={data.forecast_curve}
+            prevForecastCurve={data.prev_forecast_curve}
+            prevForecastFinish={data.prev_forecast_finish}
             progressSnapshots={data.progress_snapshots}
             onRefresh={load}
           />
@@ -484,6 +486,11 @@ data.issues.length > 0 ? (
                     {c.reason && <div className="text-xs text-slate-400 truncate">{c.reason}</div>}
                   </div>
                   <div className="text-right shrink-0">
+                    {c.before_start && c.after_start && c.before_start !== c.after_start && (
+                      <div className="text-xs text-slate-500">
+                        시작 {c.before_start.slice(5)} → {c.after_start.slice(5)}
+                      </div>
+                    )}
                     <div className="text-xs font-medium text-ink-700">
                       {c.before_end?.slice(5) ?? '-'} → {c.after_end?.slice(5) ?? '-'}
                     </div>

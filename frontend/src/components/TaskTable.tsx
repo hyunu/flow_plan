@@ -6,6 +6,7 @@ import { IconList, IconSearch, IconUser } from './icons'
 import { useDisplay } from '../auth/DisplayContext'
 import { useCan } from '../auth/AuthContext'
 import { CriticalBadge, DelayMark, ProgressBar, StatusBadge } from './ui'
+import type { ImpactHighlight } from '../lib/changeImpact'
 
 interface Props {
   tasks: Task[]
@@ -16,6 +17,8 @@ interface Props {
   filter?: 'delayed' | 'unresolved'
   onSelect: (taskId: number) => void
   onUserChange?: (userId: number | null) => void
+  /** 최근 일정 변경의 변경/영향 마커 (우선순위 ②) */
+  changeImpact?: ImpactHighlight | null
 }
 
 export function TaskTable({
@@ -27,6 +30,7 @@ export function TaskTable({
   filter,
   onSelect,
   onUserChange,
+  changeImpact = null,
 }: Props) {
   const { prefs } = useDisplay()
   const can = useCan()
@@ -316,6 +320,13 @@ export function TaskTable({
                       {hasChildren.has(row.task.id) && (
                         <span className="shrink-0 text-[10px] text-slate-400">({childCounts.get(row.task.id)})</span>
                       )}
+                      {changeImpact?.changedId === row.task.id && (
+                        <span className="shrink-0 badge bg-amber-100 text-amber-800 ring-1 ring-amber-300">변경</span>
+                      )}
+                      {changeImpact?.changedId !== row.task.id &&
+                        (changeImpact?.affectedIds.includes(row.task.id) ?? false) && (
+                          <span className="shrink-0 badge bg-amber-50 text-amber-700 ring-1 ring-amber-200">영향</span>
+                        )}
                       {row.task.is_critical && <CriticalBadge />}
                     </div>
                   </td>

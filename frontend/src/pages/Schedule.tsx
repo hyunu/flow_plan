@@ -9,6 +9,7 @@ import { TaskFormModal } from '../components/TaskFormModal'
 import { DependencyModal } from '../components/DependencyModal'
 import { IconArrowLeft, IconFlag, IconLayout, IconList, IconLink, IconPlus, IconUser } from '../components/icons'
 import { filterTasksByStatus, buildGroupOrder, type TaskFilterMode } from '../lib/taskTree'
+import { CHANGE_IMPACT_EVENT, clearChangeImpact, readChangeImpact, toHighlight, type StoredChangeImpact } from '../lib/changeImpact'
 import { Skeleton, SkeletonText } from '../components/Skeleton'
 
 export function Schedule() {
@@ -87,6 +88,17 @@ export function Schedule() {
   }
 
   useEffect(load, [projectId])
+
+  // 마지막 일정 변경의 영향 — 간트/테이블에서 변경·영향 마커로 이어서 보여준다.
+  const [changeImpact, setChangeImpact] = useState<StoredChangeImpact | null>(null)
+  useEffect(() => {
+    const refresh = () => setChangeImpact(readChangeImpact(projectId))
+    refresh()
+    window.addEventListener(CHANGE_IMPACT_EVENT, refresh)
+    return () => window.removeEventListener(CHANGE_IMPACT_EVENT, refresh)
+  }, [projectId])
+
+  const highlight = toHighlight(changeImpact)
 
   const groupOrder = tasks.length ? buildGroupOrder(groups, tasks) : []
 
@@ -232,6 +244,37 @@ export function Schedule() {
         </div>
       </div>
 
+      {/* 최근 변경 영향 배너 (우선순위 ① → ② 마커와 이어짐) */}
+      {changeImpact && (
+        <div className="flex items-start justify-between gap-3 rounded-xl bg-amber-50 ring-1 ring-amber-200 px-4 py-3 text-[13px] text-amber-900">
+          <div className="min-w-0 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="font-semibold">최근 일정 변경 영향</span>
+            <span className="text-xs text-amber-700">
+              Task #{changeImpact.taskId} · {new Date(changeImpact.at).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <span className="tabular-nums">
+              예측 완료 {changeImpact.impact.forecast_before?.slice(5) ?? '-'} → {changeImpact.impact.forecast_after?.slice(5) ?? '-'}
+              {changeImpact.impact.forecast_delta_days !== 0 &&
+                ` (${changeImpact.impact.forecast_delta_days > 0 ? '+' : ''}${changeImpact.impact.forecast_delta_days}일)`}
+            </span>
+            <span className="text-amber-700">
+              영향 태스크 {changeImpact.impact.affected_task_ids.length}건
+              {changeImpact.impact.newly_delayed_task_ids.length > 0 && ` · 신규 지연 ${changeImpact.impact.newly_delayed_task_ids.length}건`}
+            </span>
+            <span className="text-xs text-amber-700/80">아래 줄의 변경·영향 마커가 이 영향입니다</span>
+          </div>
+          <button
+            onClick={() => {
+              clearChangeImpact(projectId)
+              setChangeImpact(null)
+            }}
+            className="shrink-0 text-xs font-semibold text-amber-600 hover:text-amber-900"
+          >
+            지우기
+          </button>
+        </div>
+      )}
+
       {view === 'gantt' ? (
         <Gantt
           tasks={filterTasksByStatus(tasks, statusOnly)}
@@ -240,6 +283,7 @@ export function Schedule() {
           groupOrder={groupOrder}
           onGroupChanged={load}
           onSelect={(tid) => navigate(`/tasks/${tid}`)}
+          changeImpact={highlight}
         />
       ) : (
         <TaskTable
@@ -250,6 +294,7 @@ export function Schedule() {
           userId={userFilter ?? undefined}
           filter={listFilter}
           onSelect={(tid) => navigate(`/tasks/${tid}`)}
+          changeImpact={highlight}
         />
       )}
 

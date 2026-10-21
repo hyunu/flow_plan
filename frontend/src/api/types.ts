@@ -58,6 +58,31 @@ export interface Assignment {
   user_name?: string
 }
 
+/** 일정 변경 직후 백엔드가 계산한 영향 (PUT /tasks/{id} 응답에만 포함) */
+export interface TaskScheduleState {
+  plan_start?: string
+  plan_end?: string
+  workload?: number
+}
+
+export interface ChangeImpact {
+  changed_task_id: number
+  task_before: TaskScheduleState
+  task_after: TaskScheduleState
+  planned_before?: string
+  planned_after?: string
+  forecast_before?: string
+  forecast_after?: string
+  /** 예측 완료 달력일 차이 (after - before) */
+  forecast_delta_days: number
+  delay_days_before: number
+  delay_days_after: number
+  /** 예측 완료 또는 지연일이 달라진 태스크 */
+  affected_task_ids: number[]
+  /** 그중 지연이 새로 발생한 태스크 */
+  newly_delayed_task_ids: number[]
+}
+
 export interface Task {
   id: number
   project_id: number
@@ -92,6 +117,8 @@ export interface Task {
   total_float?: number
   early_start?: string
   early_finish?: string
+  /** 일정 변경 응답에만 담기는 영향 정보 */
+  impact?: ChangeImpact
 }
 
 export interface Dependency {
@@ -162,7 +189,19 @@ export interface DashboardData {
   delayed_tasks: { task_id: number; title: string; delay_days: number; forecast_finish?: string }[]
   issues: { id: number; title: string; status: string; resolve_plan_date?: string; cause?: string; solution?: string }[]
   user_workload: { user_id: number; name: string; workload_hours: number; done_hours: number; delayed_tasks: number; critical_tasks: number; issue_tasks: number }[]
-  recent_changes: { task_id: number; changed_at: string; reason?: string; before_end?: string; after_end?: string }[]
+  recent_changes: {
+    task_id: number
+    changed_at: string
+    reason?: string
+    before_start?: string
+    after_start?: string
+    before_end?: string
+    after_end?: string
+  }[]
+  /** 마지막 일정 변경 직전 예측 스냅샷 (S-Curve "이전 예측" 오버레이용) */
+  prev_forecast_finish?: string
+  prev_forecast_at?: string
+  prev_forecast_curve?: { date: string; pct: number }[]
   ai_summary?: string
 }
 
@@ -199,6 +238,8 @@ export interface ScheduleChange {
   changed_at: string
   reason?: string
   user_opinion?: string
+  /** 변경 당시의 영향 JSON (백엔드가 직렬화한 ChangeImpact) */
+  project_impact?: string
 }
 
 export interface Challenge {

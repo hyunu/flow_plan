@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { http } from '../api/client'
-import type { Group, ProgressUpdate, ScheduleChange, Task } from '../api/types'
+import type { ChangeImpact, Group, ProgressUpdate, ScheduleChange, Task } from '../api/types'
 import { useCan } from '../auth/AuthContext'
 import { TaskFormModal } from '../components/TaskFormModal'
 import { IconArrowLeft, IconClock, IconFlag, IconHistory, IconLink, IconUser } from '../components/icons'
 import { CriticalBadge, DelayMark, InfoTip, ProgressBar, StatusBadge } from '../components/ui'
 import { SkeletonCard, SkeletonRow, SkeletonText } from '../components/Skeleton'
+import { saveChangeImpact } from '../lib/changeImpact'
 
 const CardHead = ({
   icon,
@@ -67,6 +68,8 @@ export function TaskDetail() {
   const [edit, setEdit] = useState({ plan_start: '', plan_end: '', workload: 0, status: 'not_started', actual_start: '', actual_end: '', reason: '' })
   const [savingEdit, setSavingEdit] = useState(false)
   const [editMsg, setEditMsg] = useState<string | null>(null)
+  /** 직전 저장에서 돌아온 일정 변경 영향 (배너) */
+  const [impact, setImpact] = useState<ChangeImpact | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -154,7 +157,7 @@ export function TaskDetail() {
     setSavingEdit(true)
     setEditMsg(null)
     try {
-      await http.put(`/tasks/${task.id}`, {
+      const saved = await http.put<Task>(`/tasks/${task.id}`, {
         plan_start: edit.plan_start || null,
         plan_end: edit.plan_end || null,
         workload: edit.workload,
@@ -165,6 +168,13 @@ export function TaskDetail() {
       })
       setEdit((v) => ({ ...v, reason: '' }))
       setEditMsg('저장되었습니다.')
+      if (saved.impact) {
+        // 일정 변경이었으면 영향을 배너로 보여주고, 간트/테이블에서도 이어 보이도록 저장한다.
+        setImpact(saved.impact)
+        saveChangeImpact(task.project_id, task.id, saved.impact)
+      } else {
+        setImpact(null)
+      }
       load()
     } catch (e) {
       setEditMsg(e instanceof Error ? e.message : '저장 실패')
@@ -391,6 +401,45 @@ export function TaskDetail() {
                     {editMsg && <span className={`text-xs ${editMsg === '저장되었습니다.' ? 'text-emerald-600' : 'text-red-600'}`}>{editMsg}</span>}
                   </div>
                 </form>
+
+                {/* 변경 직후 영향 배너 (우선순위 ①) */}
+                {impact && (
+                  <div className="mt-3 rounded-xl bg-amber-50 ring-1 ring-amber-200 px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 text-[13px] text-amber-900">
+                        <div className="font-semibold">이 변경이 전체 일정에 미친 영향</div>
+                        <div className="mt-1 font-medium tabular-nums">
+                          프로젝트 예측 완료 {impact.forecast_before?.slice(5) ?? '-'} → {impact.forecast_after?.slice(5) ?? '-'}
+                          {impact.forecast_delta_days !== 0 &&
+                            ` (${impact.forecast_delta_days > 0 ? '+' : ''}${impact.forecast_delta_days}일)`}
+                        </div>
+                        <div className="text-xs text-amber-700">
+                          예상 지연 {impact.delay_days_before}일 → {impact.delay_days_after}일 · 영향 태스크 {impact.affected_task_ids.length}건
+                          {impact.newly_delayed_task_ids.length > 0 && ` · 신규 지연 ${impact.newly_delayed_task_ids.length}건`}
+                        </div>
+                        <div className="mt-0.5 text-xs text-amber-700">
+                          이 태스크: 종료 {impact.task_before.plan_end?.slice(5) ?? '-'} → {impact.task_after.plan_end?.slice(5) ?? '-'} ·
+                          작업량 {Math.round(impact.task_before.workload ?? 0)}h → {Math.round(impact.task_after.workload ?? 0)}h
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Link
+                          to={`/projects/${task.project_id}/schedule`}
+                          className="text-xs font-semibold text-amber-700 hover:text-amber-900 hover:underline"
+                        >
+                          간트에서 보기
+                        </Link>
+                        <button
+                          onClick={() => setImpact(null)}
+                          className="text-amber-500 hover:text-amber-800 font-bold leading-none"
+                          title="닫기"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
@@ -536,7 +585,7 @@ export function TaskDetail() {
                 <CardHead
                   className="mb-0"
                   title="일정 변경 이력"
-                  hint="계획 종료일이나 작업량이 바뀔 때마다 자동 기록됩니다. 변경 전·후 값과 사유를 확인할 수 있습니다."
+                  hint="계획 시작·종료일이나 작업량이 바뀔 때마다 자동 기록됩니다. 변경 전·후 값과 사유를 확인할 수 있습니다."
                 />
               </div>
               {history.length === 0 ? (
@@ -548,6 +597,7 @@ export function TaskDetail() {
                       <tr className="border-b border-slate-200">
                         <th className="th">변경일</th>
                         <th className="th">변경자</th>
+                        <th className="th">시작일 변경</th>
                         <th className="th">종료일 변경</th>
                         <th className="th">작업량 변경</th>
                         <th className="th">사유</th>
@@ -558,6 +608,11 @@ export function TaskDetail() {
                         <tr key={c.id}>
                           <td className="td whitespace-nowrap text-xs text-slate-500">{c.changed_at?.slice(0, 16).replace('T', ' ')}</td>
                           <td className="td">{c.changed_by_name}</td>
+                          <td className="td">
+                            <span className="text-slate-400">{c.before_start?.slice(5) ?? '-'}</span>
+                            <span className="mx-1.5 text-slate-300">→</span>
+                            <span className="font-medium">{c.after_start?.slice(5) ?? '-'}</span>
+                          </td>
                           <td className="td">
                             <span className="text-slate-400">{c.before_end?.slice(5) ?? '-'}</span>
                             <span className="mx-1.5 text-slate-300">→</span>

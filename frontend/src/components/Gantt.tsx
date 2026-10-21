@@ -5,6 +5,7 @@ import { useDisplay } from '../auth/DisplayContext'
 import { useCan } from '../auth/AuthContext'
 import { useGroupDrag } from '../lib/groupDrag'
 import { chartColors, formatDelay, hexWithAlpha } from '../lib/displayPrefs'
+import type { ImpactHighlight } from '../lib/changeImpact'
 import { CriticalBadge } from './ui'
 import { IconLayout } from './icons'
 const DAY = 86400000
@@ -27,6 +28,8 @@ interface Props {
   groupOrder?: string[]
   onGroupChanged?: () => void
   onSelect: (taskId: number) => void
+  /** 최근 일정 변경의 변경/영향 마커 (우선순위 ②) */
+  changeImpact?: ImpactHighlight | null
 }
 
 function parse(d?: string | null): number | null {
@@ -61,7 +64,7 @@ interface RenderRow {
   isLast: boolean
 }
 
-export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupChanged, onSelect }: Props) {
+export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupChanged, onSelect, changeImpact = null }: Props) {
   const { prefs } = useDisplay()
   const cc = chartColors(prefs.colors)
   const can = useCan()
@@ -484,6 +487,8 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
               </div>
               )
             }
+            const isChanged = changeImpact?.changedId === r.row!.task.id
+            const isAffected = !isChanged && (changeImpact?.affectedIds.includes(r.row!.task.id) ?? false)
             return (
               <div
                 key={`r${r.row!.task.id}`}
@@ -566,6 +571,15 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
                 {hasChildren.has(r.row!.task.id) && (
                   <span className="shrink-0 text-[10px] text-slate-400">({childCounts.get(r.row!.task.id)})</span>
                 )}
+                {(isChanged || isAffected) && (
+                  <span
+                    className={`shrink-0 badge ring-1 ${
+                      isChanged ? 'bg-amber-100 text-amber-800 ring-amber-300' : 'bg-amber-50 text-amber-700 ring-amber-200'
+                    }`}
+                  >
+                    {isChanged ? '변경' : '영향'}
+                  </span>
+                )}
                 {r.row!.task.is_critical && (
                   <span className="ml-auto shrink-0">
                     <CriticalBadge />
@@ -647,6 +661,8 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
               const h = 20
               const isParent = hasChildren.has(t.id)
               const hovered = hoverId === t.id
+              const isChanged = changeImpact?.changedId === t.id
+              const isAffected = !isChanged && (changeImpact?.affectedIds.includes(t.id) ?? false)
 
               const baseline = bar(t.baseline_start, t.baseline_end)
               const plan = bar(netStart(t), netEnd(t))
@@ -673,6 +689,9 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
                 >
                   <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill="transparent" />
                   {hovered && <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill={cv('slate-400')} opacity={0.16} pointerEvents="none" />}
+                  {/* 변경/영향 행 틴트 (우선순위 ②) — 카드/차트 팔레트와 무관한 마커 전용 색 */}
+                  {isChanged && <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill="#f59e0b" opacity={0.13} pointerEvents="none" />}
+                  {isAffected && <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill="#f59e0b" opacity={0.06} pointerEvents="none" />}
 
                   {/* Baseline */} 
                   {baseline && <rect x={baseline.x} y={y + 7} width={baseline.w} height={5} rx={2.5} fill={cc.baseline} opacity={0.7} />}
@@ -735,6 +754,22 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
                         {Math.round(t.effective_progress)}%
                       </text>
                     </g>
+                  )}
+
+                  {/* 변경/영향 바 링: 변경=솔리드, 영향=점선 (우선순위 ②) */}
+                  {plan && (isChanged || isAffected) && (
+                    <rect
+                      x={plan.x - 2}
+                      y={y - (isParent ? 4 : 2)}
+                      width={plan.w + 4}
+                      height={h + (isParent ? 8 : 4)}
+                      rx={7}
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth={isChanged ? 1.8 : 1.2}
+                      strokeDasharray={isChanged ? undefined : '4,3'}
+                      pointerEvents="none"
+                    />
                   )}
 
                   {/* 실제 구간 — 실제 작업 기간이 계획과 다를 때만 점선 테두리로 표시 (범례 참고).
