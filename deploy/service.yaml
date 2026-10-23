@@ -1,0 +1,44 @@
+schema_version: 1
+service:
+  id: flow-plan
+  name: Flow Plan
+  description: AI 기반 프로젝트 일정·진척 관리. FastAPI 결정적 일정 엔진(CPM/예측/지연) + React 간트·S-Curve. 일정 변경 영향(impact)과 변경 전 예측 스냅샷 비교를 제공한다.
+  category: web
+  version: "0.1.0"
+source:
+  repository_url: "https://github.com/hyunu/flow_plan"
+  branch: main
+deployment:
+  type: docker-compose
+  compose_file: compose.yaml
+endpoints:
+  - name: web
+    type: http
+    exposure: host
+    host_port: 8780
+    container: ui
+    container_port: 80
+containers:
+  - name: backend
+    role: backend
+    required: true
+    description: FastAPI + 일정 엔진. SQLite(/app/data/flow_plan.db)를 볼륨에 영속화한다.
+  - name: ui
+    role: frontend
+    required: true
+    description: Nginx 정적 UI. /api 요청을 backend:8000 으로 프록시하고 /health를 중계한다.
+resources:
+  memory_limit_mb: 1024
+operations:
+  healthcheck_required: true
+  backup_required: false
+  restart_policy: unless-stopped
+security:
+  # required_env는 "허브 서버 프로세스 환경변수"를 검사한다. 앱 시크릿은 서비스 .env(660)에만 두므로
+  # 여기에는 비워 두고(pianosync와 동일 관례), compose의 env_file로 주입한다.
+  expose_database: false
+  required_env: []
+volumes:
+  - name: flow-plan-data
+    purpose: SQLite DB(projects/tasks/schedule_changes/forecasts/progress_snapshots) 영속화
+    backup_required: false

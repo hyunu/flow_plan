@@ -1,0 +1,38 @@
+# N100 Service Hub 배포용 compose — 서버의 /srv/services/flow-plan/compose.yaml 로 배치된다.
+# 소스는 /srv/services/flow-plan/app/ 에 동기화되어 있어야 한다(deploy/sync.sh).
+services:
+  backend:
+    build:
+      context: ./app/backend
+    image: flow-plan-backend:0.1.0
+    container_name: flow-plan-backend
+    restart: unless-stopped
+    # SECRET_KEY 등 시크릿은 서비스 디렉터리의 .env(660)에서만 주입한다.
+    env_file:
+      - .env
+    volumes:
+      - flow-plan-data:/app/data
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+
+  ui:
+    build:
+      context: ./app/frontend
+    image: flow-plan-ui:0.1.0
+    container_name: flow-plan-ui
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    # 테일넷 주소에만 게시한다(기존 pianosync와 동일한 관례).
+    ports:
+      - "100.85.245.79:8780:80"
+    mem_limit: 128m
+
+volumes:
+  flow-plan-data:
