@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { http, setTokens } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { useDesktopWin } from '../components/DesktopChrome'
+import { LogoMark } from '../components/icons'
 
 const SHOW_SEED = import.meta.env.DEV
 
@@ -62,8 +63,8 @@ export function Login() {
         onPointerDown={desk ? startMove : undefined}
       >
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-violet-500 grid place-items-center font-bold text-lg shadow-lg">
-            F
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-violet-500 grid place-items-center text-white shadow-lg">
+            <LogoMark size={26} />
           </div>
           <span className="text-lg font-semibold">Flow Plan</span>
         </div>

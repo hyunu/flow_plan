@@ -22,6 +22,21 @@ function Svg({ className = '', size = 18, children }: IconProps & { children: Re
   )
 }
 
+/** 앱 로고 — 상승하는 진척 곡선과 마일스톤 점. 브랜드 그라데이션 컨테이너 안에 흰색으로 얹는다. */
+export const LogoMark = ({ size = 20 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true">
+    <path
+      d="M12 44c8.5 0 9.5-4.6 14-11.4S35.5 18.9 44 16.6"
+      stroke="currentColor"
+      strokeWidth={5.2}
+      strokeLinecap="round"
+    />
+    <circle cx="46.5" cy="15.5" r="4.6" fill="currentColor" />
+    <path d="M13 52h12" stroke="currentColor" strokeWidth={4} strokeLinecap="round" opacity={0.5} />
+    <path d="M30 52h7" stroke="currentColor" strokeWidth={4} strokeLinecap="round" opacity={0.5} />
+  </svg>
+)
+
 export const IconProjects = (p: IconProps) => (
   <Svg {...p}>
     <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />

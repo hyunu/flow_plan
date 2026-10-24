@@ -18,6 +18,7 @@ import {
   IconReport,
   IconSettings,
   IconSun,
+  LogoMark,
 } from './icons'
 
 function noticeKind(type: string) {
@@ -190,8 +191,8 @@ export function Layout() {
           className={`desktop-drag relative z-20 h-16 flex items-center border-b ${sbDark ? 'border-white/5' : 'border-black/10'} ${coll ? 'justify-center px-0' : 'gap-2.5 px-4'}`}
           onPointerDown={desk ? startMove : undefined}
         >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500 grid place-items-center text-white font-bold text-sm shadow-lg shadow-brand-900/30 shrink-0">
-            F
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-violet-500 grid place-items-center text-white shadow-lg shadow-brand-900/30 shrink-0">
+            <LogoMark size={20} />
           </div>
           {!coll && (
             <div className="min-w-0 flex-1">
