@@ -10,6 +10,7 @@ import { DependencyModal } from '../components/DependencyModal'
 import { IconArrowLeft, IconFlag, IconLayout, IconList, IconLink, IconPlus, IconUser } from '../components/icons'
 import { filterTasksByStatus, buildGroupOrder, type TaskFilterMode } from '../lib/taskTree'
 import { CHANGE_IMPACT_EVENT, clearChangeImpact, readChangeImpact, toHighlight, type StoredChangeImpact } from '../lib/changeImpact'
+import { othersOf, usePresence } from '../lib/presence'
 import { Skeleton, SkeletonText } from '../components/Skeleton'
 
 export function Schedule() {
@@ -99,6 +100,10 @@ export function Schedule() {
   }, [projectId])
 
   const highlight = toHighlight(changeImpact)
+
+  // 편집 중 표시 — 이 프로젝트를 보고 있는 다른 사용자(5초 폴링, 15초 하트비트).
+  const presence = usePresence(projectId, { enabled: !loading })
+  const others = othersOf(presence)
 
   const groupOrder = tasks.length ? buildGroupOrder(groups, tasks) : []
 
@@ -272,6 +277,30 @@ export function Schedule() {
           >
             지우기
           </button>
+        </div>
+      )}
+
+      {/* 편집 중 표시 (presence) */}
+      {others.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-50 ring-1 ring-slate-200 px-4 py-2.5 text-[13px] text-slate-600">
+          <span className="inline-flex items-center gap-1.5 font-semibold text-ink-800">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            지금 편집 중
+          </span>
+          {others.map((p) => (
+            <Link
+              key={p.user_id}
+              to={p.task_id ? `/tasks/${p.task_id}` : `/projects/${projectId}/schedule`}
+              className="inline-flex items-center gap-1.5 rounded-full bg-card px-2.5 py-1 text-xs text-ink-700 ring-1 ring-slate-200 hover:ring-brand-300 hover:text-brand-600 transition-colors"
+              title={p.task_id ? `Task #${p.task_id} 편집 중` : '프로젝트 보는 중'}
+            >
+              <span className="w-4 h-4 rounded-full bg-brand-100 text-brand-600 grid place-items-center text-[9px] font-bold">
+                {(p.user_name || '?').slice(0, 1)}
+              </span>
+              {p.user_name || `#${p.user_id}`}
+              {p.task_id ? ` · Task #${p.task_id}` : ' · 프로젝트'}
+            </Link>
+          ))}
         </div>
       )}
 

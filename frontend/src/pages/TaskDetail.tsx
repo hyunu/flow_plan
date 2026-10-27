@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { http } from '../api/client'
+import { ApiError, http } from '../api/client'
 import type { ChangeImpact, Group, ProgressUpdate, ScheduleChange, Task } from '../api/types'
 import { useCan } from '../auth/AuthContext'
 import { TaskFormModal } from '../components/TaskFormModal'
@@ -8,6 +8,7 @@ import { IconArrowLeft, IconClock, IconFlag, IconHistory, IconLink, IconUser } f
 import { CriticalBadge, DelayMark, InfoTip, ProgressBar, StatusBadge } from '../components/ui'
 import { SkeletonCard, SkeletonRow, SkeletonText } from '../components/Skeleton'
 import { saveChangeImpact } from '../lib/changeImpact'
+import { othersOf, usePresence } from '../lib/presence'
 
 const CardHead = ({
   icon,
@@ -70,6 +71,9 @@ export function TaskDetail() {
   const [editMsg, setEditMsg] = useState<string | null>(null)
   /** 직전 저장에서 돌아온 일정 변경 영향 (배너) */
   const [impact, setImpact] = useState<ChangeImpact | null>(null)
+  // 편집 중 표시 — 이 태스크를 편집 중인 사람들
+  const presence = usePresence(task?.project_id ?? -1, { taskId, enabled: !!task })
+  const editors = othersOf(presence)
 
   const load = useCallback(async () => {
     try {
@@ -119,9 +123,20 @@ export function TaskDetail() {
   const saveProgress = async () => {
     if (!task) return
     try {
-      await http.put(`/tasks/${task.id}`, { effective_progress: progress, user_adjustment: adj, change_reason: '진척률 보정' })
+      await http.put(`/tasks/${task.id}`, {
+        effective_progress: progress,
+        user_adjustment: adj,
+        change_reason: '진척률 보정',
+        expected_revision: task.revision,
+      })
       load()
     } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        // 다른 사람이 먼저 저장함 → 최신 값으로 다시 불러온다.
+        setError(e.message)
+        load()
+        return
+      }
       setError(e instanceof Error ? e.message : '저장 실패')
     }
   }
@@ -165,6 +180,8 @@ export function TaskDetail() {
         actual_start: edit.actual_start || null,
         actual_end: edit.actual_end || null,
         change_reason: edit.reason || null,
+        // 낙관적 잠금: 내가 읽은 리비전과 다르면 서버가 409로 거부한다.
+        expected_revision: task.revision,
       })
       setEdit((v) => ({ ...v, reason: '' }))
       setEditMsg('저장되었습니다.')
@@ -177,6 +194,13 @@ export function TaskDetail() {
       }
       load()
     } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        // 다른 사용자가 먼저 저장함 → 덮어쓰지 않고 최신 내용을 다시 불러온다.
+        setEditMsg(e.message)
+        setImpact(null)
+        load()
+        return
+      }
       setEditMsg(e instanceof Error ? e.message : '저장 실패')
     } finally {
       setSavingEdit(false)
@@ -281,6 +305,22 @@ export function TaskDetail() {
               <StatusBadge status={task.status} />
               {task.is_critical && <CriticalBadge />}
               <DelayMark days={delay ? task.delay_days : 0} />
+              {editors.some((e) => e.task_id === taskId) && (
+                <span className="badge bg-amber-100 text-amber-800 ring-1 ring-amber-300">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  {editors
+                    .filter((e) => e.task_id === taskId)
+                    .map((e) => e.user_name || `#${e.user_id}`)
+                    .join(', ')}{' '}
+                  님이 편집 중
+                </span>
+              )}
+              {!editors.some((e) => e.task_id === taskId) && editors.length > 0 && (
+                <span className="badge bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  {editors.map((e) => e.user_name || `#${e.user_id}`).join(', ')} 님도 접속 중
+                </span>
+              )}
               <span className="text-xs text-slate-300">#{task.id}</span>
             </div>
             {(canEditSchedule || canUpdateProgress) && (

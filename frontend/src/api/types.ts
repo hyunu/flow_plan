@@ -58,8 +58,17 @@ export interface Assignment {
   user_name?: string
 }
 
-/** 일정 변경 직후 백엔드가 계산한 영향 (PUT /tasks/{id} 응답에만 포함) */
-export interface TaskScheduleState {
+export interface PresenceEntry {
+  user_id: number
+  user_name?: string
+  /** 편집 중인 태스크(없으면 프로젝트를 보는 중) */
+  task_id?: number
+  updated_at: string
+  /** 요청한 사용자 본인 여부 */
+  is_self?: boolean
+}
+
+/** 일정 변경 직후 백엔드가 계산한 영향 (PUT /tasks/{id} 응답에만 포함) */export interface TaskScheduleState {
   plan_start?: string
   plan_end?: string
   workload?: number
@@ -108,6 +117,8 @@ export interface Task {
   is_issue: boolean
   created_at: string
   updated_at: string
+  /** 사용자 저장마다 1 증가(낙관적 잠금). 저장 시 expected_revision으로 보낸다. */
+  revision?: number
   assignments: Assignment[]
   children?: Task[]
   group_name?: string
