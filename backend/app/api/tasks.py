@@ -208,6 +208,14 @@ def update_task(task_id: int, body: TaskUpdate, db: Session = Depends(get_db), u
     for p in needed:
         require_perm(db, user, p, task.project)
 
+    # 낙관적 잠금: 다른 사용자가 먼저 저장했으면 덮어쓰지 않는다.
+    # expected_revision을 보내지 않는 기존 클라이언트는 종전과 동일하게 동작한다.
+    if body.expected_revision is not None and body.expected_revision != (task.revision or 1):
+        raise HTTPException(
+            status_code=409,
+            detail="다른 사용자가 먼저 저장했습니다. 최신 내용을 확인한 뒤 다시 저장하세요.",
+        )
+
     # 일정 변경 이력 기록 + 변경 전 상태 캡처(영향 비교용)
     schedule_changed = (
         body.plan_start is not None and body.plan_start != task.plan_start
@@ -258,6 +266,9 @@ def update_task(task_id: int, body: TaskUpdate, db: Session = Depends(get_db), u
     # effective_progress를 명시적으로 지정하면 수동 보정으로 취급해 자동 계산으로 덮어쓰지 않는다.
     if body.effective_progress is not None:
         task.progress_is_manual = True
+
+    # 사용자 저장 성공 → 편집 리비전 증가(엔진 갱신 경로는 이 값을 건드리지 않는다).
+    task.revision = (task.revision or 1) + 1
 
     audit(db, user.id, "update", "Task", task.id, reason=body.change_reason, after=task.plan_end)
     db.commit()

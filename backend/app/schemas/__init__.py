@@ -167,6 +167,8 @@ class TaskUpdate(BaseModel):
     issue_resolve_result: str | None = None
     change_reason: str | None = None
     user_opinion: str | None = None
+    # 낙관적 잠금: 프론트가 마지막으로 읽은 revision. 불일치 시 409.
+    expected_revision: int | None = None
     sort_order: int | None = None
 
 
@@ -248,6 +250,8 @@ class TaskRead(ORMModel):
     is_issue: bool
     created_at: datetime
     updated_at: datetime
+    # 사용자 저장마다 1 증가(낙관적 잠금). 엔진 진척 갱신으로는 변하지 않는다.
+    revision: int = 1
     assignments: list[AssignmentRead] = []
     children: list["TaskRead"] = []
     group_name: str | None = None
@@ -391,6 +395,22 @@ class ProgressUpdateRead(ORMModel):
     recovery_plan: str | None = None
     recovery_expected_date: date | None = None
     created_at: datetime
+
+
+# ---------- Collaboration (편집 중 표시) ----------
+class PresenceUpdate(BaseModel):
+    """하트비트. task_id가 있으면 "그 태스크를 편집 중", 없으면 "프로젝트를 보고 있음"."""
+
+    task_id: int | None = None
+
+
+class PresenceRead(BaseModel):
+    user_id: int
+    user_name: str | None = None
+    task_id: int | None = None
+    updated_at: datetime
+    # 요청한 사용자 본인 여부(프론트에서 "다른 사람"만 표시하기 위함)
+    is_self: bool = False
 
 
 class ScheduleChangeRead(ORMModel):

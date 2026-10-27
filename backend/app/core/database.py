@@ -41,6 +41,11 @@ def ensure_schema():
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE tasks ADD COLUMN sort_order INTEGER DEFAULT 0"))
                 conn.execute(text("UPDATE tasks SET sort_order = 0 WHERE sort_order IS NULL"))
+        if "revision" not in tcols:
+            # 낙관적 잠금: 사용자 저장에서만 증가하는 편집 리비전(엔진 갱신과 무관).
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN revision INTEGER DEFAULT 1"))
+                conn.execute(text("UPDATE tasks SET revision = 1 WHERE revision IS NULL"))
     if "notifications" in insp.get_table_names():
         ncols = {c["name"] for c in insp.get_columns("notifications")}
         if "is_hidden" not in ncols:

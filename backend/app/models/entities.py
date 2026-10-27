@@ -139,6 +139,9 @@ class Task(Base):
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    # 낙관적 잠금용 사용자 편집 리비전. 엔진이 진척을 다시 계산해도 변하지 않고,
+    # update_task(사용자 저장)에서만 1 증가한다.
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
 
     project: Mapped[Project] = relationship(back_populates="tasks")
@@ -495,6 +498,23 @@ class UserReportSetting(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, nullable=False, index=True)
     deliver_daily: Mapped[bool] = mapped_column(Boolean, default=False)
     deliver_weekly: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user: Mapped[User] = relationship()
+
+class EditPresence(Base):
+    """프로젝트별 '편집 중' 하트비트.
+
+    사용자당 프로젝트 1행(unique)만 유지하고, 마지막 신호가 TTL을 넘으면 목록에서 제외·정리한다.
+    """
+
+    __tablename__ = "edit_presence"
+    __table_args__ = (UniqueConstraint("project_id", "user_id", name="uq_edit_presence_project_user"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"))
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user: Mapped[User] = relationship()
