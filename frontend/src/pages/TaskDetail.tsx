@@ -8,6 +8,7 @@ import { IconArrowLeft, IconClock, IconFlag, IconHistory, IconLink, IconUser } f
 import { CriticalBadge, DelayMark, InfoTip, ProgressBar, StatusBadge } from '../components/ui'
 import { SkeletonCard, SkeletonRow, SkeletonText } from '../components/Skeleton'
 import { saveChangeImpact } from '../lib/changeImpact'
+import { PresenceBar } from '../components/PresenceBar'
 import { othersOf, usePresence } from '../lib/presence'
 
 const CardHead = ({
@@ -230,6 +231,7 @@ export function TaskDetail() {
   }
 
   const delay = task.delay_days && task.delay_days > 0
+  const editingThisTask = editors.some((e) => e.task_id === taskId)
 
   const scheduleRows = [
     { label: 'Baseline', start: task.baseline_start, end: task.baseline_end, w: task.baseline_workload, note: '변경 불가', dot: 'bg-slate-300' },
@@ -287,6 +289,9 @@ export function TaskDetail() {
     <div className="max-w-7xl mx-auto space-y-6 animate-fade-in pb-16">
       {error && <div className="card p-4 text-sm text-red-600">{error}</div>}
 
+      {/* 편집 중 표시 — 같은 태스크를 편집 중이면 앰버로 강조 */}
+      <PresenceBar entries={editors} projectId={task.project_id} focusTaskId={taskId} />
+
       {/* 헤더 요약 카드 */}
       <div className="card overflow-hidden">
         <div className="px-6 py-5">
@@ -305,22 +310,6 @@ export function TaskDetail() {
               <StatusBadge status={task.status} />
               {task.is_critical && <CriticalBadge />}
               <DelayMark days={delay ? task.delay_days : 0} />
-              {editors.some((e) => e.task_id === taskId) && (
-                <span className="badge bg-amber-100 text-amber-800 ring-1 ring-amber-300">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />
-                  {editors
-                    .filter((e) => e.task_id === taskId)
-                    .map((e) => e.user_name || `#${e.user_id}`)
-                    .join(', ')}{' '}
-                  님이 편집 중
-                </span>
-              )}
-              {!editors.some((e) => e.task_id === taskId) && editors.length > 0 && (
-                <span className="badge bg-amber-50 text-amber-700 ring-1 ring-amber-200">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400" />
-                  {editors.map((e) => e.user_name || `#${e.user_id}`).join(', ')} 님도 접속 중
-                </span>
-              )}
               <span className="text-xs text-slate-300">#{task.id}</span>
             </div>
             {(canEditSchedule || canUpdateProgress) && (
@@ -396,7 +385,7 @@ export function TaskDetail() {
 
             {/* 일정·상태 편집 */}
             {(canEditSchedule || canUpdateProgress) ? (
-              <div id="edit" className="card p-5">
+              <div id="edit" className={`card p-5 transition-shadow ${editingThisTask ? 'ring-2 ring-amber-300' : ''}`}>
                 <CardHead
                   icon={<IconClock size={15} className="text-slate-400" />}
                   title="일정·상태 편집"

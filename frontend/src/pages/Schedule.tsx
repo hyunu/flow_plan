@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { http } from '../api/client'
 import type { Dependency, Group, Project, Task } from '../api/types'
 import { useAuth, useCan } from '../auth/AuthContext'
 import { Gantt } from '../components/Gantt'
+import { PresenceBar } from '../components/PresenceBar'
 import { TaskTable } from '../components/TaskTable'
 import { TaskFormModal } from '../components/TaskFormModal'
 import { DependencyModal } from '../components/DependencyModal'
@@ -104,6 +105,36 @@ export function Schedule() {
   // 편집 중 표시 — 이 프로젝트를 보고 있는 다른 사용자(5초 폴링, 15초 하트비트).
   const presence = usePresence(projectId, { enabled: !loading })
   const others = othersOf(presence)
+
+  // 태스크별 편집자 — 간트/테이블 행에 "편집 중" 표시를 붙인다.
+  const editingByTask = useMemo(() => {
+    const map: Record<number, string[]> = {}
+    for (const p of others) {
+      if (p.task_id == null) continue
+      ;(map[p.task_id] ||= []).push(p.user_name || `#${p.user_id}`)
+    }
+    return map
+  }, [others])
+
+  // 새로 들어온 편집자를 놓치지 않도록 잠깐 토스트로 알린다(첫 로딩은 조용히).
+  const knownIds = useRef<Set<number> | null>(null)
+  const toastTimer = useRef<number | undefined>(undefined)
+  const [newcomer, setNewcomer] = useState<string | null>(null)
+  useEffect(() => {
+    const active = presence.filter((p) => !p.is_self)
+    const ids = new Set(active.map((p) => p.user_id))
+    if (knownIds.current === null) {
+      knownIds.current = ids
+      return
+    }
+    const added = active.filter((p) => !knownIds.current!.has(p.user_id))
+    knownIds.current = ids
+    if (added.length === 0) return
+    setNewcomer(`${added.map((p) => p.user_name || `#${p.user_id}`).join(', ')} 님이 편집을 시작했습니다`)
+    window.clearTimeout(toastTimer.current)
+    toastTimer.current = window.setTimeout(() => setNewcomer(null), 4500)
+  }, [presence])
+  useEffect(() => () => window.clearTimeout(toastTimer.current), [])
 
   const groupOrder = tasks.length ? buildGroupOrder(groups, tasks) : []
 
@@ -280,29 +311,8 @@ export function Schedule() {
         </div>
       )}
 
-      {/* 편집 중 표시 (presence) */}
-      {others.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-50 ring-1 ring-slate-200 px-4 py-2.5 text-[13px] text-slate-600">
-          <span className="inline-flex items-center gap-1.5 font-semibold text-ink-800">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            지금 편집 중
-          </span>
-          {others.map((p) => (
-            <Link
-              key={p.user_id}
-              to={p.task_id ? `/tasks/${p.task_id}` : `/projects/${projectId}/schedule`}
-              className="inline-flex items-center gap-1.5 rounded-full bg-card px-2.5 py-1 text-xs text-ink-700 ring-1 ring-slate-200 hover:ring-brand-300 hover:text-brand-600 transition-colors"
-              title={p.task_id ? `Task #${p.task_id} 편집 중` : '프로젝트 보는 중'}
-            >
-              <span className="w-4 h-4 rounded-full bg-brand-100 text-brand-600 grid place-items-center text-[9px] font-bold">
-                {(p.user_name || '?').slice(0, 1)}
-              </span>
-              {p.user_name || `#${p.user_id}`}
-              {p.task_id ? ` · Task #${p.task_id}` : ' · 프로젝트'}
-            </Link>
-          ))}
-        </div>
-      )}
+      {/* 편집 중 표시 (presence) — 눈에 띄게 상단 배너로 */}
+      <PresenceBar entries={others} projectId={projectId} />
 
       {view === 'gantt' ? (
         <Gantt
@@ -313,6 +323,7 @@ export function Schedule() {
           onGroupChanged={load}
           onSelect={(tid) => navigate(`/tasks/${tid}`)}
           changeImpact={highlight}
+          editingByTask={editingByTask}
         />
       ) : (
         <TaskTable
@@ -324,6 +335,7 @@ export function Schedule() {
           filter={listFilter}
           onSelect={(tid) => navigate(`/tasks/${tid}`)}
           changeImpact={highlight}
+          editingByTask={editingByTask}
         />
       )}
 
@@ -343,6 +355,21 @@ export function Schedule() {
         onClose={() => setShowDeps(false)}
         onSaved={load}
       />
+
+      {/* 새 편집자 알림 — 하단 우측 토스트 */}
+      {newcomer && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-6 z-[80] flex items-center gap-3 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-xl animate-fade-in"
+        >
+          <span className="inline-block w-2 h-2 rounded-full bg-white/90 animate-pulse" />
+          {newcomer}
+          <button onClick={() => setNewcomer(null)} className="ml-1 text-white/70 hover:text-white" title="닫기">
+            ×
+          </button>
+        </div>
+      )}
     </div>
   )
 }

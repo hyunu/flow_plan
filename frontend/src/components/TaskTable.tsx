@@ -19,6 +19,8 @@ interface Props {
   onUserChange?: (userId: number | null) => void
   /** 최근 일정 변경의 변경/영향 마커 (우선순위 ②) */
   changeImpact?: ImpactHighlight | null
+  /** 태스크별 편집 중 사용자 이름 — 행에 "편집 중" 표시를 붙인다. */
+  editingByTask?: Record<number, string[]>
 }
 
 export function TaskTable({
@@ -31,6 +33,7 @@ export function TaskTable({
   onSelect,
   onUserChange,
   changeImpact = null,
+  editingByTask = {},
 }: Props) {
   const { prefs } = useDisplay()
   const can = useCan()
@@ -269,6 +272,8 @@ export function TaskTable({
                       : undefined
                   }
                   className={`cursor-pointer transition-colors ${
+                    (editingByTask[row.task.id]?.length ?? 0) > 0 ? 'bg-emerald-50/60' : ''
+                  } ${
                     dragApi.draggingTask === row.task.id ? 'opacity-40' : ''
                   } ${
                     dragApi.overTaskId === row.task.id
@@ -319,6 +324,15 @@ export function TaskTable({
                       </span>
                       {hasChildren.has(row.task.id) && (
                         <span className="shrink-0 text-[10px] text-slate-400">({childCounts.get(row.task.id)})</span>
+                      )}
+                      {(editingByTask[row.task.id]?.length ?? 0) > 0 && (
+                        <span
+                          className="shrink-0 badge bg-emerald-50 text-emerald-700 ring-1 ring-emerald-300"
+                          title={`${(editingByTask[row.task.id] ?? []).join(', ')} 편집 중`}
+                        >
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          편집 중
+                        </span>
                       )}
                       {changeImpact?.changedId === row.task.id && (
                         <span className="shrink-0 badge bg-amber-100 text-amber-800 ring-1 ring-amber-300">변경</span>

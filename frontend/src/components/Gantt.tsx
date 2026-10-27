@@ -30,6 +30,8 @@ interface Props {
   onSelect: (taskId: number) => void
   /** 최근 일정 변경의 변경/영향 마커 (우선순위 ②) */
   changeImpact?: ImpactHighlight | null
+  /** 태스크별 편집 중 사용자 이름 — 행에 "편집 중" 표시를 붙인다. */
+  editingByTask?: Record<number, string[]>
 }
 
 function parse(d?: string | null): number | null {
@@ -64,7 +66,7 @@ interface RenderRow {
   isLast: boolean
 }
 
-export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupChanged, onSelect, changeImpact = null }: Props) {
+export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupChanged, onSelect, changeImpact = null, editingByTask = {} }: Props) {
   const { prefs } = useDisplay()
   const cc = chartColors(prefs.colors)
   const can = useCan()
@@ -489,6 +491,7 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
             }
             const isChanged = changeImpact?.changedId === r.row!.task.id
             const isAffected = !isChanged && (changeImpact?.affectedIds.includes(r.row!.task.id) ?? false)
+            const editors = editingByTask[r.row!.task.id] ?? []
             return (
               <div
                 key={`r${r.row!.task.id}`}
@@ -570,6 +573,15 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
                 </span>
                 {hasChildren.has(r.row!.task.id) && (
                   <span className="shrink-0 text-[10px] text-slate-400">({childCounts.get(r.row!.task.id)})</span>
+                )}
+                {editors.length > 0 && (
+                  <span
+                    className="shrink-0 badge bg-emerald-50 text-emerald-700 ring-1 ring-emerald-300"
+                    title={`${editors.join(', ')} 편집 중`}
+                  >
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    편집 중
+                  </span>
                 )}
                 {(isChanged || isAffected) && (
                   <span
@@ -663,6 +675,7 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
               const hovered = hoverId === t.id
               const isChanged = changeImpact?.changedId === t.id
               const isAffected = !isChanged && (changeImpact?.affectedIds.includes(t.id) ?? false)
+              const editors = editingByTask[t.id] ?? []
 
               const baseline = bar(t.baseline_start, t.baseline_end)
               const plan = bar(netStart(t), netEnd(t))
@@ -689,6 +702,9 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
                 >
                   <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill="transparent" />
                   {hovered && <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill={cv('slate-400')} opacity={0.16} pointerEvents="none" />}
+                  {editors.length > 0 && (
+                    <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill="#10b981" opacity={0.12} pointerEvents="none" />
+                  )}
                   {/* 변경/영향 행 틴트 (우선순위 ②) — 카드/차트 팔레트와 무관한 마커 전용 색 */}
                   {isChanged && <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill="#f59e0b" opacity={0.13} pointerEvents="none" />}
                   {isAffected && <rect x={0} y={yOf(idx)} width={W} height={rowH(r)} fill="#f59e0b" opacity={0.06} pointerEvents="none" />}
