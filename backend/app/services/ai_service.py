@@ -324,7 +324,12 @@ def generate_user_challenges(
                     ).strip()
                 except Exception:
                     polished = ""
-                if polished and not polished.startswith("[Mock") and "요청 맥락:" not in polished:
+                if (
+                    polished
+                    and not polished.startswith("[Mock")
+                    and "요청 맥락:" not in polished
+                    and _numbers_preserved(message, polished)
+                ):
                     message = polished
             ch = Challenge(
                 user_id=user.id,
@@ -675,7 +680,12 @@ def generate_daily_report(db: Session, user: User, today: date | None = None) ->
             ).strip()
         except Exception:
             polished = ""
-        if polished and not polished.startswith("[Mock") and "요청 맥락:" not in polished:
+        if (
+            polished
+            and not polished.startswith("[Mock")
+            and "요청 맥락:" not in polished
+            and _numbers_preserved(content, polished)
+        ):
             content = polished
 
     existing = db.query(DailyReport).filter_by(user_id=user.id, report_date=today).first()
@@ -775,7 +785,12 @@ def generate_weekly_report(db: Session, project: Project, week_start: date | Non
             ).strip()
         except Exception:
             polished = ""
-        if polished and not polished.startswith("[Mock") and "요청 맥락:" not in polished:
+        if (
+            polished
+            and not polished.startswith("[Mock")
+            and "요청 맥락:" not in polished
+            and _numbers_preserved(content, polished)
+        ):
             content = polished
 
     existing = db.query(WeeklyReport).filter_by(project_id=project.id, week_start=week_start).first()
