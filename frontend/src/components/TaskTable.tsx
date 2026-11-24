@@ -342,6 +342,14 @@ export function TaskTable({
                           <span className="shrink-0 badge bg-amber-50 text-amber-700 ring-1 ring-amber-200">영향</span>
                         )}
                       {row.task.is_critical && <CriticalBadge />}
+                      {row.task.forecast_is_critical && !row.task.is_critical && (
+                        <span
+                          className="shrink-0 badge bg-amber-50 text-amber-700 ring-1 ring-amber-300"
+                          title={`예측 임계경로 — 실제 지연 ${row.task.delay_days ?? 0}일, 잔여 여유 ${row.task.forecast_total_float ?? 0}일`}
+                        >
+                          지연 임계
+                        </span>
+                      )}
                     </div>
                   </td>
                 <td className="td">

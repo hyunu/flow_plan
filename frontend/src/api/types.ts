@@ -124,6 +124,9 @@ export interface Task {
   group_name?: string
   delay_days?: number
   is_critical?: boolean
+  /** 예측 기준(실제 지연 반영) 임계 여부·여유 */
+  forecast_is_critical?: boolean
+  forecast_total_float?: number
   forecast_finish?: string
   total_float?: number
   early_start?: string
@@ -171,6 +174,9 @@ export interface CriticalPathItem {
   late_start?: string
   late_finish?: string
   is_critical: boolean
+  forecast_finish?: string
+  forecast_total_float?: number
+  forecast_is_critical?: boolean
 }
 
 export interface ScheduleAnalysis {
@@ -181,6 +187,7 @@ export interface ScheduleAnalysis {
   forecast_finish?: string
   schedule_delay_days?: number
   critical_path: CriticalPathItem[]
+  forecast_critical_path?: CriticalPathItem[]
 }
 
 export interface DashboardData {
@@ -191,6 +198,8 @@ export interface DashboardData {
   planned_finish?: string
   forecast_finish?: string
   expected_delay_days: number
+  /** 예측 임계경로의 최대 지연(작업일) — 위험도 등급 근거 */
+  critical_delay_days?: number
   risk_level: string
   plan_curve?: { date: string; pct: number }[]
   forecast_curve?: { date: string; pct: number }[]

@@ -597,6 +597,14 @@ export function Gantt({ tasks, dependencies, groups = [], groupOrder, onGroupCha
                     <CriticalBadge />
                   </span>
                 )}
+                {r.row!.task.forecast_is_critical && !r.row!.task.is_critical && (
+                  <span
+                    className="ml-auto shrink-0 badge bg-amber-50 text-amber-700 ring-1 ring-amber-300"
+                    title={`예측 임계경로 — 실제 지연 ${r.row!.task.delay_days ?? 0}일`}
+                  >
+                    지연 임계
+                  </span>
+                )}
               </div>
               )
             }

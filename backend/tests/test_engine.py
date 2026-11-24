@@ -116,7 +116,9 @@ def test_schedule_engine_deterministic():
     t1 = next(t for t in r1.tasks if t.task_id == 1)
     assert t1.delay_days >= 0
     assert r1.forecast_curve
-    assert r1.forecast_curve[0][1] == 0.0  # 계획 곡선 시작점(0%)을 지연일만큼 평행이동
+    # 예측 곡선은 계획곡선 평행이동이 아니라 '오늘 실적'에서 시작해 예측 완료일 100%로 수렴
+    assert r1.forecast_curve[0][0] == date(2026, 9, 2)
+    assert r1.forecast_curve[0][1] == r1.actual_progress
     assert r1.forecast_curve[-1][1] == 100.0
     assert r1.forecast_curve[-1][0] == r1.project_forecast_finish
 

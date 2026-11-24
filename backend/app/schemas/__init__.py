@@ -257,6 +257,9 @@ class TaskRead(ORMModel):
     group_name: str | None = None
     is_critical: bool = False
     delay_days: int | None = None
+    # 예측 기준(실제 지연 반영) 임계 여부/여유
+    forecast_is_critical: bool = False
+    forecast_total_float: float | None = None
     early_start: date | None = None
     early_finish: date | None = None
     forecast_finish: date | None = None

@@ -25,6 +25,7 @@ class EngineTaskInput:
     status: str = "not_started"
     assignments: list[tuple[int, float]] = field(default_factory=list)  # (user_id, hours)
     parent_id: int | None = None
+    actual_start: date | None = None
     actual_end: date | None = None
 
 
@@ -61,6 +62,7 @@ class ScheduleResult:
     tasks: list[TaskResult] = field(default_factory=list)
     critical_path_ids: list[int] = field(default_factory=list)
     forecast_critical_path_ids: list[int] = field(default_factory=list)
+    schedule_velocity: float = 1.0  # 실제 완료 속도/계획 속도 (1.0 = 계획대로)
     plan_curve: list[tuple[date, float]] = field(default_factory=list)  # (date, 계획 진척률%)
     forecast_curve: list[tuple[date, float]] = field(default_factory=list)  # 오늘 이후 예측 진척률%
 
@@ -125,26 +127,75 @@ def _build_plan_curve(
     return out
 
 
-def _build_forecast_curve(
-    plan_curve: list[tuple[date, float]],
-    today: date,
-    delay_days: int,
-    forecast_finish: date | None,
-) -> list[tuple[date, float]]:
-    """예측선 = 계획 곡선을 지연일만큼 오른쪽으로 평행이동한 곡선.
-    지연이 없으면 계획 곡선과 동일하고, 예측 완료일까지는 100%를 유지한다."""
-    if not plan_curve:
-        return []
-    if delay_days <= 0 or not forecast_finish:
-        return list(plan_curve)
-    out: list[tuple[date, float]] = []
-    for d, pct in plan_curve:
-        fd = d + timedelta(days=delay_days)
-        if fd < today:
+def _velocity_factor(tasks: list[EngineTaskInput], cal: WorkingCalendar) -> float:
+    """실제 완료 속도 / 계획 속도 (작업량 가중). 표본이 없으면 1.0.
+
+    완료 태스크의 (계획 작업일, 실제 작업일) 비율을 모아, 남은 작업량을
+    계획 속도로만 환산하던 낙관 편향을 보정한다. 0.5~2.0 으로 제한.
+    """
+    num = 0.0
+    den = 0.0
+    for t in tasks:
+        if t.status != "completed" or not (t.actual_start and t.actual_end):
             continue
-        out.append((fd, pct))
-    if out and out[-1][0] < forecast_finish:
-        out.append((forecast_finish, 100.0))
+        if not (t.plan_start and t.plan_end):
+            continue
+        planned = cal.count_workdays(t.plan_start, t.plan_end)
+        actual = cal.count_workdays(t.actual_start, t.actual_end)
+        if planned <= 0 or actual <= 0:
+            continue
+        weight = max(t.workload, 1.0)
+        num += actual * weight
+        den += planned * weight
+    if den <= 0:
+        return 1.0
+    return max(0.5, min(2.0, num / den))
+
+
+def _build_forecast_curve(
+    leaf_rows: list[tuple[date | None, date | None, float]],
+    cal: WorkingCalendar,
+    today: date,
+    forecast_finish: date | None,
+    actual_progress: float,
+) -> list[tuple[date, float]]:
+    """예측 S-Curve — 오늘의 실적에서 시작해 예측 완료일에 100%로 수렴한다.
+
+    각 잎 태스크의 (남은 작업량)을 예측 구간에 걸쳐 소진한다고 보고,
+    작업일 진행 비율만큼 남은 진척을 배분한다. (계획곡선 평행이동이 아님)
+    """
+    if forecast_finish is None or forecast_finish < today:
+        return []
+    rows = [(s, e, r) for (s, e, r) in leaf_rows if r > 0 and e is not None]
+    total_remaining = sum(r for _, _, r in rows)
+    if total_remaining <= 0:
+        return [(today, 100.0)]
+
+    out: list[tuple[date, float]] = []
+    d = today
+    guard = 0
+    while d <= forecast_finish and guard < 4000:
+        done = 0.0
+        for start, end, remaining in rows:
+            if end is None or end < d:
+                done += remaining
+                continue
+            window_start = max(start or today, today)
+            if d <= window_start:
+                continue
+            total_days = cal.count_workdays(window_start, end)
+            if total_days <= 0:
+                done += remaining
+                continue
+            elapsed = cal.count_workdays(window_start, min(d, end))
+            ratio = max(0.0, min(1.0, elapsed / total_days))
+            done += remaining * ratio
+        pct = actual_progress + (100.0 - actual_progress) * (done / total_remaining)
+        out.append((d, round(min(100.0, max(0.0, pct)), 1)))
+        d += timedelta(days=1)
+        guard += 1
+    if out:
+        out[-1] = (forecast_finish, 100.0)
     return out
 
 
@@ -198,6 +249,7 @@ def _forecast_finish_for_task(
     today: date,
     progress: float,
     user_specs: list[UserCalendarSpec] | None = None,
+    velocity: float = 1.0,
 ) -> date | None:
     if not t.plan_start or not t.plan_end:
         return None
@@ -207,6 +259,8 @@ def _forecast_finish_for_task(
     remaining = t.workload * (1 - progress / 100.0)
     if remaining <= 0:
         return t.plan_end
+    # 실제 완료 속도가 계획보다 느리면 남은 작업량을 그만큼 늘려 잡는다.
+    remaining *= velocity
     start = max(t.plan_start, today)
     return _forecast_end_with_capacity(cal, user_specs or [], start, remaining)
 
@@ -244,6 +298,9 @@ def run_schedule_engine(
     network = build_network(list(nodes.values()), edges, project_cal)
     planned_finish = network.compute()
 
+    # 2.5) 실제 완료 속도(계획 대비) — 남은 작업량 환산에 사용
+    velocity = _velocity_factor(tasks, project_cal)
+
     # 3) Forecast CPM (진척 기반 종료일 반영)
     forecast_nodes: dict[int, TaskNode] = {}
     forecast_finish_map: dict[int, date] = {}
@@ -257,7 +314,7 @@ def run_schedule_engine(
             if hours > 0
         ]
         progress = t.effective_progress
-        ff = _forecast_finish_for_task(t, project_cal, today, progress, user_specs)
+        ff = _forecast_finish_for_task(t, project_cal, today, progress, user_specs, velocity)
 
         if t.status == "completed":
             # 완료 태스크를 예측망에서 빼면 그 (선행→후속) 의존성이 사라져
@@ -348,7 +405,22 @@ def run_schedule_engine(
         expected_delay = max(0, (forecast_finish - planned_finish).days)
 
     plan_curve = _build_plan_curve(tasks, project_cal, child_ids, today, planned_finish)
-    forecast_curve = _build_forecast_curve(plan_curve, today, expected_delay, forecast_finish)
+
+    # 예측 곡선은 예측 네트워크의 (남은 작업량, 예측 구간)에서 직접 만든다.
+    leaf_rows: list[tuple[date | None, date | None, float]] = []
+    for t in tasks:
+        if t.id in child_ids:
+            continue
+        fnode = forecast_nodes.get(t.id)
+        if not fnode:
+            continue
+        remaining = 0.0 if t.status == "completed" else max(
+            t.workload * (1 - t.effective_progress / 100.0), 0.0
+        )
+        leaf_rows.append((fnode.earliest_start, fnode.earliest_finish, remaining))
+    forecast_curve = _build_forecast_curve(
+        leaf_rows, project_cal, today, forecast_finish, actual_progress
+    )
 
     return ScheduleResult(
         project_planned_finish=planned_finish,
@@ -357,6 +429,7 @@ def run_schedule_engine(
         plan_progress=plan_progress,
         actual_progress=actual_progress,
         progress_gap=round(plan_progress - actual_progress, 1),
+        schedule_velocity=round(velocity, 3),
         tasks=results,
         critical_path_ids=[
             tr.task_id

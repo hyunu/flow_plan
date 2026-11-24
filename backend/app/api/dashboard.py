@@ -157,7 +157,7 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
         default=0,
     )
     if critical_delay_days >= 5:
-        risk_level = "HIGH"
+        risk_level = "CRITICAL"
     elif result.expected_delay_days > 0:
         risk_level = "WARNING"
     else:

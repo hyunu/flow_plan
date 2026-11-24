@@ -225,10 +225,16 @@ export function Dashboard() {
         <StatCard
           label="예상 지연"
           value={data.expected_delay_days > 0 ? `+${data.expected_delay_days}일` : '정상'}
-          sub={data.expected_delay_days > 0 ? '계획 대비 지연' : '계획 준수'}
+          sub={
+            (data.critical_delay_days ?? 0) > 0
+              ? `임계경로 지연 +${data.critical_delay_days}일`
+              : data.expected_delay_days > 0
+                ? '계획 대비 지연'
+                : '계획 준수'
+          }
           icon={<IconClock size={15} />}
           tone={data.expected_delay_days > 0 ? 'danger' : 'ok'}
-          hint={`계획 완료일(${data.planned_finish?.slice(5) || '-'}) 대비 예상 완료일이 늦어지는 일수입니다.`}
+          hint={`계획 완료일(${data.planned_finish?.slice(5) || '-'}) 대비 예상 완료일이 늦어지는 일수입니다. '임계경로 지연'은 실제 지연을 반영한 예측 임계경로에서 가장 많이 밀린 작업일입니다(5일 이상이면 CRITICAL).`}
         />
       </div>
 

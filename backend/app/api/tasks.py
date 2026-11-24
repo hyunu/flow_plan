@@ -53,6 +53,8 @@ def _to_read(t: Task, db: Session, engine: TaskResult | None = None) -> TaskRead
         read.early_finish = engine.early_finish
         read.forecast_finish = engine.forecast_finish
         read.total_float = engine.total_float
+        read.forecast_is_critical = engine.forecast_is_critical
+        read.forecast_total_float = engine.forecast_total_float
     return read
 
 
