@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta
 import threading
 from datetime import date
 
@@ -17,7 +18,7 @@ from app.models.entities import (
     Task,
     User,
 )
-from app.services.ai_service import personalize_risk_summary
+from app.services.ai_service import ai_is_enabled, personalize_risk_summary
 from app.services.schedule_service import (
     compute_project_schedule,
     display_finishes,
@@ -123,13 +124,28 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
             prev_forecast_at = latest_forecast.created_at
 
     latest_analysis = db.query(AIAnalysis).filter_by(project_id=project.id, analysis_type="risk").order_by(AIAnalysis.created_at.desc()).first()
-    needs_ai = latest_analysis is None
-    if latest_analysis:
-        try:
-            parsed = json.loads(latest_analysis.content)
-            needs_ai = not isinstance(parsed, dict) or not (parsed.get("headline") or parsed.get("situation"))
-        except Exception:
-            needs_ai = True
+    # AI가 mock이면 호출하지 않고, 실제 AI여도 10분 백오프로 무한 재생성을 막는다.
+    needs_ai = False
+    if ai_is_enabled():
+        now = datetime.utcnow()
+        invalid = False
+        if latest_analysis:
+            try:
+                parsed = json.loads(latest_analysis.content)
+                invalid = not isinstance(parsed, dict) or not (parsed.get("headline") or parsed.get("situation"))
+            except Exception:
+                invalid = True
+        recent = bool(
+            latest_analysis
+            and latest_analysis.created_at
+            and (now - latest_analysis.created_at) < timedelta(minutes=10)
+        )
+        stale = bool(
+            latest_analysis
+            and latest_analysis.created_at
+            and (now - latest_analysis.created_at) > timedelta(hours=6)
+        )
+        needs_ai = (latest_analysis is None or invalid or stale) and not recent
     if needs_ai:
         # 응답 지연 방지: 백그라운드에서 생성 (다음 조회 시 반영)
         threading.Thread(target=_generate_risk_async, args=(project.id,), daemon=True).start()

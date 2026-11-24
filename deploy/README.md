@@ -27,6 +27,22 @@ chgrp hubdeploy .env && chmod 660 .env
 
 그 다음 MCP: `hub_deploy_plan` → READY 확인 → `hub_deploy_apply(service_id="flow-plan", confirmed=true)`.
 
+## AI(Gemini) 켜기
+
+```bash
+ssh n100-pve-dev
+cd /srv/services/flow-plan
+# .env 에 두 줄 추가(기존 SECRET_KEY 유지)
+#   AI_PROVIDER=gemini
+#   GEMINI_API_KEY=<발급 키>
+#   GEMINI_MODEL=gemini-2.5-flash   # 선택
+docker compose up -d --force-recreate backend
+```
+
+- AI는 **브리핑 생성/문구 다듬기**에만 쓰고, 일정 숫자는 엔진이 계산한다.
+- 출력은 **스키마+숫자 검증**을 거치며, 실패하면 결정적 브리핑으로 자동 대체된다(`sources.basis`에 기록).
+- `AI_PROVIDER=mock`이면 LLM을 호출하지 않는다(결정적 브리핑만 저장).
+
 ## 재배포
 ```bash
 deploy/sync.sh            # 소스 동기화

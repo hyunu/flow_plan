@@ -88,3 +88,81 @@ def test_daily_report_has_new_sections_and_auto_generates(db):
     assert n >= 1
     rows = db.query(DailyReport).filter_by(user_id=user.id, report_date=date.today()).count()
     assert rows == 1
+
+
+# ---------- AI: mock 가드·숫자 검증 ----------
+def test_numbers_preserved_rejects_invented():
+    from app.services.ai_service import _numbers_preserved
+
+    facts = "예상 완료 2027-04-16 / 지연 58일 / 진척 36%"
+    assert _numbers_preserved(facts, "예상 완료 2027-04-16, 계획보다 58일 지연")
+    assert not _numbers_preserved(facts, "예상 완료 2027-05-30, 계획보다 99일 지연")
+
+
+def test_risk_analysis_mock_never_stores_mock_text(db):
+    """mock 프로바이더에서는 [Mock...] 텍스트를 저장하지 않고 결정적 JSON을 만든다."""
+    from app.models.entities import AIAnalysis
+    from app.services.ai_service import analyze_project_risk
+
+    project = db.get(Project, 1)
+    analysis = analyze_project_risk(db, project)
+    assert analysis.content.startswith("{")
+    assert "[Mock" not in analysis.content
+    data = __import__("json").loads(analysis.content)
+    assert data["basis"] == "deterministic"
+    assert data["headline"] and data["situation"]
+    assert data["risks"] or data["recommendations"]
+    # 근거에 실제 수치가 들어있다
+    assert "2027-02-17" in analysis.content or "2027-04" in analysis.content
+
+
+def test_risk_analysis_falls_back_when_ai_invents_numbers(db, monkeypatch):
+    """AI가 근거에 없는 숫자를 만들면 결정적 브리핑으로 폴백한다."""
+    import app.services.ai_service as svc
+
+    class _BadProvider:
+        name = "fake"
+
+        def generate(self, prompt, system=None, max_tokens=1500):
+            return '{"headline":"예상 완료 2099-12-31, 999일 지연","situation":"없는 숫자"}'
+
+    monkeypatch.setattr(svc, "get_ai_provider", lambda: _BadProvider())
+    analysis = svc.analyze_project_risk(db, db.get(Project, 1))
+    data = __import__("json").loads(analysis.content)
+    assert data["basis"] == "deterministic"
+    assert "2099-12-31" not in analysis.content
+
+
+def test_personalize_exposes_ai_brief(db):
+    """검증된 AI 브리핑이 있으면 요약 payload에 ai_brief/ai_watch로 노출된다."""
+    import json as _json
+    from app.services.ai_service import personalize_risk_summary
+    from app.services.schedule_service import compute_project_schedule
+
+    project = db.get(Project, 1)
+    result = compute_project_schedule(db, project)
+    user = db.query(User).filter_by(username="pm_a").one()
+    content = _json.dumps(
+        {
+            "basis": "ai",
+            "headline": "테스트 헤드라인 2027-04-16",
+            "situation": "상황",
+            "watch_next": "다음 주 확인",
+        },
+        ensure_ascii=False,
+    )
+    payload = _json.loads(
+        personalize_risk_summary(
+            content,
+            user=user,
+            result=result,
+            my_task_ids=set(),
+            role_name="Project Manager",
+            delayed=[t for t in result.tasks if t.delay_days > 0],
+            critical=[t for t in result.tasks if t.forecast_is_critical],
+            issues=[],
+            user_load=[],
+        )
+    )
+    assert payload["ai_brief"].startswith("테스트 헤드라인")
+    assert payload["ai_watch"] == "다음 주 확인"

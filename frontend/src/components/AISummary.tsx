@@ -13,6 +13,9 @@ interface LineItem {
 
 interface RiskData {
   brief?: string
+  /** 검증된 AI 브리핑(엔진 수치 유지) — 있으면 요약 아래에 덧붙인다 */
+  ai_brief?: string
+  ai_watch?: string
   needs_detail?: boolean
   problems?: LineItem[]
   remedies?: LineItem[]
@@ -144,6 +147,19 @@ export function AISummary({
       {data?.brief && (
         <p className="text-[14px] text-ink-800 leading-relaxed">
           <RichText text={data.brief} />
+        </p>
+      )}
+
+      {data?.ai_brief && (
+        <p className="text-[13px] text-ink-700 leading-relaxed border-l-2 border-brand-200 pl-3">
+          <span className="text-[11px] font-semibold text-brand-600 mr-1.5">AI</span>
+          <RichText text={data.ai_brief} />
+        </p>
+      )}
+
+      {data?.ai_watch && (
+        <p className="text-[12px] text-slate-500 leading-relaxed">
+          이번 주 확인: <RichText text={data.ai_watch} />
         </p>
       )}
 

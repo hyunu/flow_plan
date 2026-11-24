@@ -59,26 +59,158 @@ def notice_title_from_body(body: str, fallback: str = "오늘의 챌린지를 �
     return fallback
 
 
+
+def _figures(text: str) -> set[str]:
+    """날짜와 두 자리 이상 숫자만 뽑는다(문장부호·순번 같은 잡음 제외)."""
+    out: set[str] = set()
+    for m in re.findall(r"\d{4}-\d{2}-\d{2}|\d+(?:\.\d+)?", text or ""):
+        if "-" in m or len(m.replace(".", "")) >= 2:
+            out.add(m)
+    return out
+
+
+def _numbers_preserved(source: str, output: str) -> bool:
+    """AI 출력의 날짜·주요 숫자가 근거(source)에 있는 값인지 확인한다."""
+    if not output:
+        return False
+    return not (_figures(output) - _figures(source))
+
+
+def ai_is_enabled() -> bool:
+    """실제 LLM 프로바이더가 설정됐는지(mock이면 AI를 부르지 않는다)."""
+    try:
+        return get_ai_provider().name != "mock"
+    except Exception:
+        return False
+
+
+def _strip_json_fence(raw: str) -> str:
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text).strip()
+    return text
+
+
+def _deterministic_risk_content(result: ScheduleResult, project: Project) -> str:
+    """AI를 쓸 수 없거나 출력이 검증을 통과하지 못할 때 쓰는 결정적 브리핑."""
+    critical = sorted(
+        [t for t in result.tasks if t.forecast_is_critical],
+        key=lambda t: (-t.delay_days, t.task_id),
+    )
+    delayed = sorted(
+        [t for t in result.tasks if t.delay_days > 0 and t.status != "completed"],
+        key=lambda t: -t.delay_days,
+    )
+    head = critical[0] if critical else (delayed[0] if delayed else None)
+    if result.expected_delay_days > 0:
+        headline = (
+            f"{project.name} 예상 완료 {result.project_forecast_finish}, "
+            f"계획보다 {result.expected_delay_days}일 지연"
+        )
+        situation = (
+            f"실제 진척 {result.actual_progress:.0f}% / 계획 {result.plan_progress:.0f}% "
+            f"(Gap {result.progress_gap:g}%p). 지연 Task {len(delayed)}건, "
+            f"예측 임계경로 {len(critical)}건이 종료일을 밀고 있습니다."
+        )
+    else:
+        headline = f"{project.name} 예상 완료 {result.project_forecast_finish} (계획 범위)"
+        situation = (
+            f"실제 진척 {result.actual_progress:.0f}% / 계획 {result.plan_progress:.0f}% "
+            f"(Gap {result.progress_gap:g}%p). 예측상 계획일 안에 들어옵니다."
+        )
+    payload = {
+        "basis": "deterministic",
+        "overall_risk": "HIGH" if result.expected_delay_days >= 5 else ("WARNING" if result.expected_delay_days > 0 else "NORMAL"),
+        "headline": headline,
+        "situation": situation,
+        "outlook": (
+            f"엔진 예측 종료일은 {result.project_forecast_finish}입니다. "
+            + (f"임계경로에서 하루 더 밀리면 전체도 하루 더 밀립니다." if critical else "임계경로 지연은 없습니다.")
+        ),
+        "watch_next": (
+            f"「{head.title}」의 원인/대책 기록과 진척 갱신" if head else "의존관계와 계획일 정합성"
+        ),
+        "risks": [
+            {
+                "task_id": t.task_id,
+                "task_title": t.title,
+                "risk": f"예측 임계경로, {t.delay_days}일 지연, 여유 {t.forecast_total_float}일",
+                "severity": "CRITICAL" if t.delay_days > 0 else "WARNING",
+                "type": "system_calc",
+            }
+            for t in critical[:6]
+        ],
+        "recommendations": [
+            {
+                "task_id": t.task_id,
+                "task_title": t.title,
+                "action": "오늘 안에 지연 원인·대책과 예상 추가 일수를 진행 기록에 남기고, 후속 착수 조건을 확정",
+            }
+            for t in (critical or delayed)[:4]
+        ],
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _parse_ai_brief(content: str | None) -> dict | None:
+    if not content:
+        return None
+    try:
+        data = json.loads(_strip_json_fence(content))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    if not (data.get("headline") or data.get("situation")):
+        return None
+    return data
+
 def build_project_facts(project: Project, result: ScheduleResult, db: Session) -> str:
-    """엔진이 계산한 사실 데이터를 AI 프롬프트용 텍스트로 변환."""
+    """엔진이 계산한 사실 데이터를 AI 프롬프트용 텍스트로 변환.
+
+    예측 기준(forecast) 지표를 쓰고, 태스크는 임계/지연 상위만 넣어
+    프롬프트를 짧고 판단에 필요한 내용으로 유지한다.
+    """
+    delayed_all = [t for t in result.tasks if t.delay_days > 0 and t.status != "completed"]
+    critical = sorted(
+        [t for t in result.tasks if t.forecast_is_critical],
+        key=lambda t: (-t.delay_days, -(t.forecast_total_float or 0)),
+    )[:10]
+    delayed = sorted(delayed_all, key=lambda t: -t.delay_days)[:15]
     lines = [
         f"# 프로젝트: {project.name}",
         f"- 계획 완료일: {result.project_planned_finish}",
-        f"- 예상 완료일(AI 예측 아님, 엔진 계산): {result.project_forecast_finish}",
+        f"- 예상 완료일(엔진 계산): {result.project_forecast_finish}",
         f"- 예상 지연: {result.expected_delay_days}일",
-        f"- 계획 진척률(엔진): {result.plan_progress}%",
-        f"- 실제 진척률(엔진+사용자 보정): {result.actual_progress}%",
-        f"- Gap: {result.progress_gap}%p",
+        f"- 계획 진척률: {result.plan_progress}% / 실제 진척률: {result.actual_progress}% / Gap: {result.progress_gap}%p",
+        f"- 완료 속도(실제/계획): {result.schedule_velocity} (1.0=계획대로, >1 느림)",
+        f"- 지연 Task {len(delayed_all)}건 · 예측 임계경로 {len(critical)}건",
         "",
-        "## Task별 사실",
+        "## 예측 임계경로 (실제 지연 반영)",
     ]
-    for t in result.tasks:
-        critical = " (CRITICAL PATH)" if t.is_critical else ""
-        lines.append(
-            f"- Task#{t.task_id} [{t.title}]{critical}: "
-            f"일정 {t.schedule_progress}% / 실제 {t.effective_progress}% / "
-            f"예상종료 {t.forecast_finish} / 지연 {t.delay_days}일 / float {t.total_float}"
-        )
+    if critical:
+        for t in critical:
+            lines.append(
+                f"- Task#{t.task_id} [{t.title}]: 지연 {t.delay_days}일 / "
+                f"예측 여유 {t.forecast_total_float}일 / 진척 {t.effective_progress}% / "
+                f"예상종료 {t.forecast_finish} / 상태 {t.status}"
+            )
+    else:
+        lines.append("- (없음)")
+    lines.append("")
+    lines.append("## 지연 상위")
+    crit_ids = {t.task_id for t in critical}
+    shown = [t for t in delayed if t.task_id not in crit_ids][:10]
+    if shown:
+        for t in shown:
+            lines.append(
+                f"- Task#{t.task_id} [{t.title}]: 지연 {t.delay_days}일 / "
+                f"진척 {t.effective_progress}% / 예상종료 {t.forecast_finish} / 상태 {t.status}"
+            )
+    else:
+        lines.append("- (없음)")
+    lines.append("")
 
     # 사용자 의견 수집
     lines.append("")
@@ -663,79 +795,64 @@ def analyze_project_risk(db: Session, project: Project) -> AIAnalysis:
     provider = get_ai_provider()
     result = compute_project_schedule(db, project, date.today())
     facts = build_project_facts(project, result, db)
-    delayed_n = len([t for t in result.tasks if t.delay_days > 0])
-    issue_n = db.query(Task).filter_by(project_id=project.id, is_issue=True, is_deleted=False).count()
-    prompt = (
-        f"아래 프로젝트 데이터를 바탕으로 관리자·담당자가 바로 움직일 수 있는 현황 브리핑을 작성하세요.\n"
-        f"JSON만 반환하세요(마크다운 코드블록 없이).\n"
-        f"- overall_risk: HIGH/WARNING/NORMAL 중 하나\n"
-        f"- headline: 한 문장 헤드라인(숫자 포함, 예: 예상 완료가 계획보다 N일 지연)\n"
-        f"- situation: 2~4문장. 진척 Gap, 지연 Task {delayed_n}건, Issue {issue_n}건, "
-        f"크리티컬 패스 지연이 프로젝트 완료일을 며칠 미는지 명시\n"
-        f"- outlook: 1~2문장. 엔진 예상 완료일. CP 노드가 하루 더 밀리면 전체도 하루 밀린다고 경고\n"
-        f"- watch_next: 이번 주에 확인할 한 가지(가능하면 지연 중인 CP 태스크명)\n"
-        f"- risks: [{{'task_id': 번호, 'task_title': '제목', 'risk': '왜 위험한지+전체 일정 영향 일수', "
-        f"'severity': 'CRITICAL|WARNING|ATTENTION', 'type': 'system_calc|user_opinion|ai_prediction'}}]\n"
-        f"  최대 8개. 크리티컬 패스 지연을 맨 앞에. 여유(float)=0이면 '하루 지연=전체 하루 지연'을 쓸 것.\n"
-        f"- recommendations: [{{'task_id': 번호, 'task_title': '제목', 'action': '누가 무엇을 할지'}}] "
-        f"최대 6개. 실행 가능하게.\n"
-        f"추측은 type=ai_prediction. 엔진 숫자는 바꾸지 말 것.\n\n{facts}"
-    )
-    content = provider.generate(
-        prompt,
-        system=(
-            "프로젝트 현황 브리핑 AI. 결정적 계산만 근거로 쓰고 추측은 ai_prediction. "
-            "한국어. 크리티컬 패스 지연이 프로젝트 종료일을 얼마나 미는지 숫자로 경고할 것."
-        ),
-        max_tokens=2000,
-    )
+    fallback = _deterministic_risk_content(result, project)
+
+    content = fallback
+    basis = "deterministic"
+    if provider.name != "mock":
+        delayed_n = len([t for t in result.tasks if t.delay_days > 0 and t.status != "completed"])
+        issue_n = db.query(Task).filter_by(project_id=project.id, is_issue=True, is_deleted=False).count()
+        prompt = (
+            f"아래 프로젝트 데이터를 근거로 관리자·담당자가 바로 움직일 수 있는 브리핑을 작성하세요.\n"
+            f"JSON만 반환하세요(마크다운 코드블록 없이).\n"
+            f"- basis: \"ai\"\n"
+            f"- overall_risk: HIGH/WARNING/NORMAL 중 하나\n"
+            f"- headline: 한 문장(숫자 포함, 예: 예상 완료 2027-04-16, 계획보다 58일 지연)\n"
+            f"- situation: 3~5문장. 진척 Gap, 지연 Task {delayed_n}건, Issue {issue_n}건, "
+            f"예측 임계경로가 완료일을 며칠 미는지 명시\n"
+            f"- outlook: 1~2문장. 엔진 예상 완료일과 다음 주 리스크\n"
+            f"- watch_next: 이번 주에 확인할 한 가지(가능하면 지연 중인 임계 태스크명)\n"
+            f"- risks: [{{'task_id': 번호, 'task_title': '제목', 'risk': '왜 위험한지+일정 영향 일수', "
+            f"'severity': 'CRITICAL|WARNING|ATTENTION', 'type': 'system_calc|user_opinion|ai_prediction'}}] 최대 8개\n"
+            f"- recommendations: [{{'task_id': 번호, 'task_title': '제목', 'action': '누가 무엇을 오늘/이번 주에 할지'}}] 최대 6개\n"
+            f"규칙: 근거 데이터에 없는 숫자·날짜·태스크를 만들지 말 것. 추측은 type=ai_prediction.\n\n{facts}"
+        )
+        try:
+            raw = provider.generate(
+                prompt,
+                system=(
+                    "프로젝트 현황 브리핑 AI. 결정적 계산만 근거로 쓰고 추측은 ai_prediction. "
+                    "한국어. 임계경로 지연이 종료일을 얼마나 미는지 숫자로 경고."
+                ),
+                max_tokens=2000,
+            )
+        except Exception:
+            raw = ""
+        parsed = _parse_ai_brief(_strip_json_fence(raw))
+        if parsed and _numbers_preserved(facts, json.dumps(parsed, ensure_ascii=False)):
+            content = json.dumps(parsed, ensure_ascii=False)
+            basis = "ai"
+        else:
+            basis = "deterministic-fallback"
+
     analysis = AIAnalysis(
         project_id=project.id,
         analysis_type="risk",
         content=content,
-        sources=json.dumps({"schedule": result.project_forecast_finish.isoformat() if result.project_forecast_finish else None}),
+        sources=json.dumps(
+            {
+                "basis": basis,
+                "schedule": result.project_forecast_finish.isoformat() if result.project_forecast_finish else None,
+                "expected_delay_days": result.expected_delay_days,
+                "actual_progress": result.actual_progress,
+                "plan_progress": result.plan_progress,
+            },
+            ensure_ascii=False,
+        ),
     )
     db.add(analysis)
     db.commit()
     return analysis
-
-
-def _cp_warning(t: TaskResult) -> dict:
-    """카드에 없는 내용만: 여유 0일·초과분이 전체에 전가된다는 경고."""
-    # 실제 지연이 반영된 예측 기준 여유 (계획 기준 float 는 지연을 모른다)
-    slack = int(round(t.forecast_total_float if t.forecast_is_critical else t.total_float or 0))
-    if t.is_critical:
-        if t.delay_days > 0:
-            return {
-                "task_id": t.task_id,
-                "task_title": t.title,
-                "tone": "critical",
-                "impact_days": t.delay_days,
-                "text": (
-                    f"**여유 0일**입니다. 이 노드의 **{t.delay_days}일**은 완충 없이 후속 착수와 종료일에 전가됩니다. "
-                    f"여기서 하루 더 밀리면 **프로젝트 완료일도 하루 더 밀립니다.** 오늘 **만회안**을 남기세요."
-                ),
-            }
-        return {
-            "task_id": t.task_id,
-            "task_title": t.title,
-            "tone": "warning",
-            "impact_days": 0,
-            "text": "**여유 0일**입니다. **하루만 늦어도 프로젝트 완료일이 하루 밀립니다.** 진척을 오늘 맞추세요.",
-        }
-    overflow = max(0, t.delay_days - max(slack, 0))
-    if t.delay_days > 0 and overflow > 0:
-        return {
-            "task_id": t.task_id,
-            "task_title": t.title,
-            "tone": "critical",
-            "impact_days": overflow,
-            "text": (
-                f"여유 {slack}일을 넘겼습니다. 초과분 약 {overflow}일은 후속·종료일에 전가될 수 있습니다. "
-                f"이 노드가 크리티컬 패스로 올라가기 전에 끊으세요."
-            ),
-        }
-    return {}
 
 
 def personalize_risk_summary(
@@ -930,6 +1047,11 @@ def personalize_risk_summary(
             )
 
     payload["for_you"] = for_you
+    ai = _parse_ai_brief(content)
+    if ai and ai.get("basis") != "deterministic":
+        payload["ai_brief"] = ai.get("headline") or ai.get("situation")
+        payload["ai_watch"] = ai.get("watch_next")
+        payload["ai_basis"] = ai.get("basis") or "ai"
     return json.dumps(payload, ensure_ascii=False)
 
 
