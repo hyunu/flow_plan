@@ -441,6 +441,10 @@ class CriticalPathItem(BaseModel):
     late_start: date | None = None
     late_finish: date | None = None
     is_critical: bool = False
+    # 예측 기준(실제 지연 반영) 지표
+    forecast_finish: date | None = None
+    forecast_total_float: float = 0.0
+    forecast_is_critical: bool = False
 
 
 class ScheduleAnalysis(BaseModel):
@@ -451,6 +455,8 @@ class ScheduleAnalysis(BaseModel):
     forecast_finish: date | None = None
     schedule_delay_days: int | None = None
     critical_path: list[CriticalPathItem] = []
+    # 실제 지연이 반영된 임계경로 (계획 기준 critical_path 와 다를 수 있다)
+    forecast_critical_path: list[CriticalPathItem] = []
 
 
 class ChallengeRead(ORMModel):

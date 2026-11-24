@@ -25,6 +25,7 @@ class EngineTaskInput:
     status: str = "not_started"
     assignments: list[tuple[int, float]] = field(default_factory=list)  # (user_id, hours)
     parent_id: int | None = None
+    actual_end: date | None = None
 
 
 @dataclass
@@ -44,6 +45,9 @@ class TaskResult:
     forecast_finish: date | None = None
     delay_days: int = 0
     status: str = "not_started"
+    # 예측 네트워크 기준 지표 — 실제 지연이 반영된 임계경로/여유
+    forecast_total_float: float = 0.0
+    forecast_is_critical: bool = False
 
 
 @dataclass
@@ -56,6 +60,7 @@ class ScheduleResult:
     progress_gap: float
     tasks: list[TaskResult] = field(default_factory=list)
     critical_path_ids: list[int] = field(default_factory=list)
+    forecast_critical_path_ids: list[int] = field(default_factory=list)
     plan_curve: list[tuple[date, float]] = field(default_factory=list)  # (date, 계획 진척률%)
     forecast_curve: list[tuple[date, float]] = field(default_factory=list)  # 오늘 이후 예측 진척률%
 
@@ -143,24 +148,67 @@ def _build_forecast_curve(
     return out
 
 
+def _daily_capacity(
+    cal: WorkingCalendar,
+    user_specs: list[UserCalendarSpec],
+    d: date,
+) -> float:
+    """해당 날짜의 실제 작업 가능 시간.
+
+    프로젝트 캘린더(휴일/단축)를 상한으로 두고, 담당자별 가용시간을 합산한다.
+    담당자가 2명이면 처리량이 2배가 되고, 한 명이 휴가면 그만큼 줄어든다.
+    """
+    base = cal.available_hours(d)
+    if base <= 0:
+        return 0.0
+    if not user_specs:
+        return base
+    return sum(spec.hours_on(d, base) for spec in user_specs)
+
+
+def _forecast_end_with_capacity(
+    cal: WorkingCalendar,
+    user_specs: list[UserCalendarSpec],
+    start: date,
+    remaining_hours: float,
+) -> date:
+    """담당자 용량을 반영해 remaining_hours를 소화하는 마지막 작업일."""
+    if remaining_hours <= 0:
+        return start
+    d = start if cal.is_workday(start) else cal.next_workday(start)
+    acc = 0.0
+    guard = 0
+    zero_streak = 0
+    while acc < remaining_hours and guard < 4000:
+        capacity = _daily_capacity(cal, user_specs, d)
+        acc += capacity
+        if acc >= remaining_hours:
+            break
+        zero_streak = zero_streak + 1 if capacity <= 0 else 0
+        if zero_streak > 400:  # 1년 넘게 가용시간이 없으면 더 밀지 않는다
+            break
+        d = cal.next_workday(d)
+        guard += 1
+    return d
+
+
 def _forecast_finish_for_task(
     t: EngineTaskInput,
     cal: WorkingCalendar,
     today: date,
     progress: float,
+    user_specs: list[UserCalendarSpec] | None = None,
 ) -> date | None:
     if not t.plan_start or not t.plan_end:
         return None
     if t.status == "completed":
-        return t.plan_end
+        # 실제 종료일이 있으면 그것을 쓴다(조기 완료 반영). 없으면 계획 종료일.
+        return t.actual_end or t.plan_end
     remaining = t.workload * (1 - progress / 100.0)
     if remaining <= 0:
         return t.plan_end
-    user_specs: dict[int, UserCalendarSpec] = {}
-    # 개인별 가용시간 반영을 위해 user 단위 캘린더 결합이 필요하지만,
-    # 엔진 입력 수준에서는 작업량을 담당자 수로 나눠 평균 가용시간을 적용한다.
     start = max(t.plan_start, today)
-    return cal.forecast_end(start, remaining)
+    return _forecast_end_with_capacity(cal, user_specs or [], start, remaining)
 
 
 def run_schedule_engine(
@@ -202,13 +250,31 @@ def run_schedule_engine(
     for t in tasks:
         if t.id not in nodes:
             continue
-        # 완료 태스크는 남은 작업이 없으므로 예측 네트워크에서 제외한다.
-        # 남겨두면 선행 진행 중 태스크의 지연이 완료 태스크의 네트워크 EF로 전파되어
-        # 완료 태스크에 예측 연장/지연이 표시되고 프로젝트 완료 예측도 과장된다.
-        if t.status == "completed":
-            continue
+        # 담당자별 가용시간 — 개인 캘린더가 없으면 프로젝트 기본(8h)로 본다.
+        user_specs = [
+            user_cals.get(uid) or UserCalendarSpec()
+            for (uid, hours) in t.assignments
+            if hours > 0
+        ]
         progress = t.effective_progress
-        ff = _forecast_finish_for_task(t, project_cal, today, progress)
+        ff = _forecast_finish_for_task(t, project_cal, today, progress, user_specs)
+
+        if t.status == "completed":
+            # 완료 태스크를 예측망에서 빼면 그 (선행→후속) 의존성이 사라져
+            # 후속이 선행보다 먼저 시작하는 일정이 만들어진다.
+            # 실제 종료일(없으면 계획 종료일)에 고정한 노드로 유지해 제약을 보존한다.
+            finish = t.actual_end or t.plan_end
+            duration = max(1, project_cal.count_workdays(t.plan_start, finish))
+            forecast_nodes[t.id] = TaskNode(
+                id=t.id,
+                title=t.title,
+                duration=duration,
+                plan_start=t.plan_start,
+                fixed_finish=finish,
+            )
+            forecast_finish_map[t.id] = finish
+            continue
+
         if ff and ff > t.plan_end:
             duration = max(1, project_cal.count_workdays(t.plan_start, ff))
             forecast_nodes[t.id] = TaskNode(id=t.id, title=t.title, duration=duration, plan_start=t.plan_start)
@@ -233,11 +299,16 @@ def run_schedule_engine(
         effective = t.effective_progress
         if t.status == "completed" and t.id not in child_ids:
             effective = 100.0
+        # 지연 = 계획 종료일 대비 예측 종료일의 초과 작업일.
+        # (계획 CPM EF는 선행 제약으로 plan_end보다 앞설 수 있어 기준으로 쓰지 않는다)
         delay_days = 0
-        if node and fnode and fnode.earliest_finish and node.earliest_finish:
-            delay_days = max(0, project_cal.count_workdays(node.earliest_finish, fnode.earliest_finish) - 1)
+        if fnode and fnode.earliest_finish and t.plan_end and fnode.earliest_finish > t.plan_end:
+            delay_days = max(0, project_cal.count_workdays(t.plan_end, fnode.earliest_finish) - 1)
         total_float = node.total_float if node else 0.0
         is_critical = bool(node and node.is_critical)
+        # 예측 기준(실제 지연 반영) — 완료 태스크는 임계 표시에서 제외
+        forecast_is_critical = bool(fnode and fnode.is_critical and t.status != "completed")
+        forecast_total_float = fnode.total_float if fnode else 0.0
         results.append(
             TaskResult(
                 task_id=t.id,
@@ -255,6 +326,8 @@ def run_schedule_engine(
                 forecast_finish=fnode.earliest_finish if fnode else t.plan_end,
                 delay_days=delay_days,
                 status=t.status,
+                forecast_total_float=round(forecast_total_float, 1),
+                forecast_is_critical=forecast_is_critical,
             )
         )
         w = max(t.workload, 1.0)
@@ -290,6 +363,13 @@ def run_schedule_engine(
             for tr in sorted(
                 (t for t in results if t.is_critical),
                 key=lambda t: (t.early_start or date.max, t.early_finish or date.max, t.task_id),
+            )
+        ],
+        forecast_critical_path_ids=[
+            tr.task_id
+            for tr in sorted(
+                (t for t in results if t.forecast_is_critical),
+                key=lambda t: (t.early_start or date.max, t.forecast_finish or date.max, t.task_id),
             )
         ],
         plan_curve=plan_curve,

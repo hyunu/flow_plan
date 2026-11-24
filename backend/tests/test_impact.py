@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -46,22 +47,38 @@ def admin(client):
     return r.json()
 
 
-def _setup_project(client, headers) -> tuple[int, int, int]:
-    """의존성(A → B)이 있는 2태스크 프로젝트를 만들고 (project_id, a_id, b_id)를 반환한다."""
+# 날짜는 '오늘' 기준 상대값 — 고정 날짜를 쓰면 시간이 지나며 테스트가 깨진다.
+A_START = date.today() + timedelta(days=7)
+A_END = A_START + timedelta(days=10)
+B_START = A_END + timedelta(days=3)
+B_END = B_START + timedelta(days=6)
+A_START_MOVED = A_START + timedelta(days=7)
+A_END_PULLED = A_START + timedelta(days=2)
+
+
+def _setup_project(client, headers, a_start=None, a_end=None) -> tuple[int, int, int]:
+    """의존성(A → B)이 있는 2태스크 프로젝트를 만들고 (project_id, a_id, b_id)를 반환한다.
+
+    a_start/a_end 로 A의 계획 구간을 바꿀 수 있다(작업량 대비 빠듯한 구간 → 지연 발생).
+    """
+    a_start = a_start or A_START
+    a_end = a_end or A_END
+    b_start = a_end + timedelta(days=3)
+    b_end = b_start + timedelta(days=6)
     r = client.post("/projects", headers=headers, json={"name": "영향 테스트"})
     assert r.status_code == 200, r.text
     pid = r.json()["id"]
 
     r = client.post("/tasks", headers=headers, json={
         "project_id": pid, "title": "A",
-        "plan_start": "2026-11-02", "plan_end": "2026-11-06", "workload": 40,
+        "plan_start": a_start.isoformat(), "plan_end": a_end.isoformat(), "workload": 40,
     })
     assert r.status_code == 200, r.text
     a_id = r.json()["id"]
 
     r = client.post("/tasks", headers=headers, json={
         "project_id": pid, "title": "B",
-        "plan_start": "2026-11-09", "plan_end": "2026-11-11", "workload": 24,
+        "plan_start": b_start.isoformat(), "plan_end": b_end.isoformat(), "workload": 24,
     })
     assert r.status_code == 200, r.text
     b_id = r.json()["id"]
@@ -76,16 +93,18 @@ def _setup_project(client, headers) -> tuple[int, int, int]:
 # ---------- 우선순위 ①④: 응답 impact + 시작일 노출 ----------
 def test_start_change_moves_forecast(client, admin):
     h = _auth(admin["access_token"])
-    pid, a_id, b_id = _setup_project(client, h)
+    pid, a_id, b_id = _setup_project(
+        client, h, a_start=A_START, a_end=A_START + timedelta(days=3)
+    )
 
     # A 시작일을 1주 연기하면 예측 완료도 달력일 7일 뒤로 밀린다(오늘 > 계획 시작이므로 엔진이 plan_start를 따른다).
-    r = client.put(f"/tasks/{a_id}", headers=h, json={"plan_start": "2026-11-09"})
+    r = client.put(f"/tasks/{a_id}", headers=h, json={"plan_start": A_START_MOVED.isoformat()})
     assert r.status_code == 200, r.text
     impact = r.json().get("impact")
     assert impact, "일정 변경 응답에 impact가 없다"
     assert impact["changed_task_id"] == a_id
-    assert impact["task_before"]["plan_start"] == "2026-11-02"
-    assert impact["task_after"]["plan_start"] == "2026-11-09"
+    assert impact["task_before"]["plan_start"] == A_START.isoformat()
+    assert impact["task_after"]["plan_start"] == A_START_MOVED.isoformat()
     assert impact["forecast_before"] < impact["forecast_after"]
     assert impact["forecast_delta_days"] == 7
     # 의존 태스크 B까지 영향받았는가
@@ -97,8 +116,8 @@ def test_start_change_moves_forecast(client, admin):
     assert r.status_code == 200, r.text
     recent = r.json()["recent_changes"][0]
     assert recent["task_id"] == a_id
-    assert recent["before_start"] == "2026-11-02"
-    assert recent["after_start"] == "2026-11-09"
+    assert recent["before_start"] == A_START.isoformat()
+    assert recent["after_start"] == A_START_MOVED.isoformat()
 
 
 # ---------- 우선순위 ①: 종료일 당김 → 지연 발생 ----------
@@ -107,14 +126,15 @@ def test_pull_end_creates_delay(client, admin):
     pid, a_id, _b_id = _setup_project(client, h)
 
     # A 종료일을 앞당기면 계획은 당겨지지만 남은 작업량 기반 예측은 그대로 → 지연 발생.
-    r = client.put(f"/tasks/{a_id}", headers=h, json={"plan_end": "2026-11-04"})
+    r = client.put(f"/tasks/{a_id}", headers=h, json={"plan_end": A_END_PULLED.isoformat()})
     assert r.status_code == 200, r.text
     impact = r.json()["impact"]
     assert impact["delay_days_before"] == 0
     assert impact["delay_days_after"] > 0
     assert a_id in impact["newly_delayed_task_ids"]
     assert a_id in impact["affected_task_ids"]
-    assert impact["forecast_delta_days"] == 0  # 예측 완료 자체는 안 움직임(계획만 당겨짐)
+    # 예측 완료는 남은 작업량 기준이라 계획 종료일을 당겨도 늦어지지 않는다(같거나 앞당겨짐)
+    assert impact["forecast_delta_days"] <= 0
 
 
 # ---------- 이력 저장(우선순위 ①의 기록) ----------
@@ -123,7 +143,7 @@ def test_impact_stored_in_history(client, admin):
     pid, a_id, _b_id = _setup_project(client, h)
 
     r = client.put(f"/tasks/{a_id}", headers=h, json={
-        "plan_end": "2026-11-04", "change_reason": "범위 축소",
+        "plan_end": A_END_PULLED.isoformat(), "change_reason": "범위 축소",
     })
     assert r.status_code == 200, r.text
     impact = r.json()["impact"]
@@ -151,7 +171,7 @@ def test_forecast_snapshot_taken(client, admin):
     before = r.json()
     assert before == [], "준비 단계에서 스냅샷이 있으면 안 된다"
 
-    r = client.put(f"/tasks/{a_id}", headers=h, json={"plan_end": "2026-11-04"})
+    r = client.put(f"/tasks/{a_id}", headers=h, json={"plan_end": A_END_PULLED.isoformat()})
     assert r.status_code == 200, r.text
 
     r = client.get(f"/projects/{pid}/forecast", headers=h)

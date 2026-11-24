@@ -61,14 +61,19 @@ def _user_calendar_spec(db: Session, user_id: int) -> UserCalendarSpec | None:
     return UserCalendarSpec(daily_work_hours=cal.daily_work_hours, exceptions=exceptions)
 
 
-def _aggregate_parents(tasks: list[Task]) -> None:
-    """Child Task를 기반으로 Parent Task의 진척률/일정/작업량을 계산한다.
-    사용자가 parent를 직접 보정(effective_progress 수동 설정)한 경우는 유지한다."""
+def parent_aggregates(tasks: list[Task]) -> dict[int, tuple[float | None, date | None, date | None]]:
+    """Child Task를 기반으로 Parent Task의 (진척률, 계획 시작, 계획 종료)를 **계산만** 한다.
+
+    DB 엔티티를 변이하지 않는다 — 조회 중 계산이 저장으로 새는 것을 막기 위해
+    엔진 입력을 만들 때는 이 결과를 덮어쓴다. (시드처럼 실제로 반영해야 하는
+    곳은 `_aggregate_parents` 를 쓴다)
+    """
     by_parent: dict[int, list[Task]] = {}
     for t in tasks:
         if t.parent_id:
             by_parent.setdefault(t.parent_id, []).append(t)
 
+    out: dict[int, tuple[float | None, date | None, date | None]] = {}
     for parent in tasks:
         children = by_parent.get(parent.id)
         if not children:
@@ -76,16 +81,33 @@ def _aggregate_parents(tasks: list[Task]) -> None:
         # 작업량 가중 평균 진척률
         total_w = sum(max(c.workload, 1.0) for c in children)
         agg_progress = sum(c.effective_progress * max(c.workload, 1.0) for c in children) / total_w if total_w else 0
+        progress = None
         if not parent.progress_is_manual:
-            parent.effective_progress = round(min(100.0, max(0.0, agg_progress)), 1)
+            progress = round(min(100.0, max(0.0, agg_progress)), 1)
         plan_starts = [c.plan_start for c in children if c.plan_start]
         plan_ends = [c.plan_end for c in children if c.plan_end]
-        if plan_starts:
-            parent.plan_start = min(plan_starts)
-        if plan_ends:
-            parent.plan_end = max(plan_ends)
+        out[parent.id] = (
+            progress,
+            min(plan_starts) if plan_starts else None,
+            max(plan_ends) if plan_ends else None,
+        )
         # 부모 workload는 시드의 원래 값을 유지한다. 자식 합(병렬 모듈을 순차로 취급)으로 덮어쓰면
         # 예측 일정(forecast)이 비현실적으로 늘어난다.
+    return out
+
+
+def _aggregate_parents(tasks: list[Task]) -> None:
+    """parent_aggregates 결과를 엔티티에 반영한다(시드 등 저장이 목적인 경우)."""
+    for parent_id, (progress, start, end) in parent_aggregates(tasks).items():
+        parent = next((t for t in tasks if t.id == parent_id), None)
+        if parent is None:
+            continue
+        if progress is not None:
+            parent.effective_progress = progress
+        if start is not None:
+            parent.plan_start = start
+        if end is not None:
+            parent.plan_end = end
 
 
 def compute_project_schedule(db: Session, project: Project, today: date | None = None) -> ScheduleResult:
@@ -94,7 +116,8 @@ def compute_project_schedule(db: Session, project: Project, today: date | None =
         Task.project_id == project.id
     ).all()
 
-    _aggregate_parents(tasks)
+    # 조회 중 엔티티를 변이하지 않는다(계산 결과만 입력에 덮어쓴다).
+    aggregates = parent_aggregates(tasks)
 
     project_cal = WorkingCalendar(_project_calendar_spec(project))
 
@@ -106,20 +129,34 @@ def compute_project_schedule(db: Session, project: Project, today: date | None =
         if spec:
             user_cals[uid] = spec
 
-    inputs = [
-        EngineTaskInput(
-            id=t.id,
-            title=t.title,
-            plan_start=t.plan_start,
-            plan_end=t.plan_end,
-            workload=t.workload,
-            effective_progress=t.effective_progress,
-            status=t.status,
-            assignments=[(a.user_id, a.workload_hours) for a in t.assignments],
-            parent_id=t.parent_id,
+    inputs: list[EngineTaskInput] = []
+    for t in tasks:
+        progress = t.effective_progress
+        plan_start = t.plan_start
+        plan_end = t.plan_end
+        derived = aggregates.get(t.id)
+        if derived is not None:
+            agg_progress, agg_start, agg_end = derived
+            if agg_progress is not None:
+                progress = agg_progress
+            if agg_start is not None:
+                plan_start = agg_start
+            if agg_end is not None:
+                plan_end = agg_end
+        inputs.append(
+            EngineTaskInput(
+                id=t.id,
+                title=t.title,
+                plan_start=plan_start,
+                plan_end=plan_end,
+                workload=t.workload,
+                effective_progress=progress,
+                status=t.status,
+                assignments=[(a.user_id, a.workload_hours) for a in t.assignments],
+                parent_id=t.parent_id,
+                actual_end=t.actual_end,
+            )
         )
-        for t in tasks
-    ]
 
     dep_tuples = [(d.predecessor_id, d.successor_id, d.dependency_type, d.lag_days) for d in deps]
 

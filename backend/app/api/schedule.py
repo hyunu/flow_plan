@@ -45,23 +45,51 @@ def schedule_analysis(project_id: int, db: Session = Depends(get_db), user: User
                 task_id=t.task_id, title=t.title, total_float=t.total_float, free_float=t.free_float,
                 early_start=t.early_start, early_finish=t.early_finish,
                 late_start=t.late_start, late_finish=t.late_finish, is_critical=t.is_critical,
+                forecast_finish=t.forecast_finish,
+                forecast_total_float=t.forecast_total_float,
+                forecast_is_critical=t.forecast_is_critical,
             )
             for t in result.tasks
+        ],
+        forecast_critical_path=[
+            CriticalPathItem(
+                task_id=t.task_id, title=t.title, total_float=t.total_float, free_float=t.free_float,
+                early_start=t.early_start, early_finish=t.early_finish,
+                late_start=t.late_start, late_finish=t.late_finish, is_critical=t.is_critical,
+                forecast_finish=t.forecast_finish,
+                forecast_total_float=t.forecast_total_float,
+                forecast_is_critical=t.forecast_is_critical,
+            )
+            for t in result.tasks
+            if t.forecast_is_critical
         ],
     )
 
 
 @router.get("/critical-path", response_model=list[CriticalPathItem])
-def critical_path(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def critical_path(
+    project_id: int,
+    basis: str = "plan",
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """basis=plan(계획 기준) | forecast(실제 지연 반영)."""
     project = get_project_or_403(db, project_id, user)
     result = _compute_or_conflict(db, project_id)
-    items = [t for t in result.tasks if t.is_critical]
-    items.sort(key=lambda t: (t.early_start or date.max, t.early_finish or date.max, t.task_id))
+    if basis == "forecast":
+        items = [t for t in result.tasks if t.forecast_is_critical]
+        items.sort(key=lambda t: (t.early_start or date.max, t.forecast_finish or date.max, t.task_id))
+    else:
+        items = [t for t in result.tasks if t.is_critical]
+        items.sort(key=lambda t: (t.early_start or date.max, t.early_finish or date.max, t.task_id))
     return [
         CriticalPathItem(
             task_id=t.task_id, title=t.title, total_float=t.total_float, free_float=t.free_float,
             early_start=t.early_start, early_finish=t.early_finish,
             late_start=t.late_start, late_finish=t.late_finish, is_critical=t.is_critical,
+            forecast_finish=t.forecast_finish,
+            forecast_total_float=t.forecast_total_float,
+            forecast_is_critical=t.forecast_is_critical,
         )
         for t in items
     ]

@@ -151,6 +151,18 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
         user_load=list(user_load.values()),
     )
 
+    # 실제 지연이 반영된(예측 기준) 임계경로의 최대 지연 — 리스크 등급의 근거.
+    critical_delay_days = max(
+        (t.delay_days for t in result.tasks if t.forecast_is_critical),
+        default=0,
+    )
+    if critical_delay_days >= 5:
+        risk_level = "HIGH"
+    elif result.expected_delay_days > 0:
+        risk_level = "WARNING"
+    else:
+        risk_level = "NORMAL"
+
     return {
         "project_name": project.name,
         "overall_progress": result.actual_progress,
@@ -159,7 +171,8 @@ def project_dashboard(project_id: int, db: Session = Depends(get_db), user: User
         "planned_finish": display_planned_finish,
         "forecast_finish": display_forecast_finish,
         "expected_delay_days": result.expected_delay_days,
-        "risk_level": "WARNING" if result.expected_delay_days > 0 else "NORMAL",
+        "critical_delay_days": critical_delay_days,
+        "risk_level": risk_level,
         "plan_curve": [{"date": d.isoformat(), "pct": pct} for d, pct in result.plan_curve],
         "forecast_curve": [{"date": d.isoformat(), "pct": pct} for d, pct in result.forecast_curve],
         "progress_snapshots": [

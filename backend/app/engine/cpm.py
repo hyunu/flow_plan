@@ -24,6 +24,9 @@ class TaskNode:
     total_float: float = 0.0
     free_float: float = 0.0
     is_critical: bool = False
+    # 완료 태스크처럼 종료일이 이미 확정된 노드 — 전방 패스에서 EF를 이 날짜로 고정한다.
+    # (후속 태스크는 이 고정 EF를 선행 조건으로 사용하므로 의존성이 끊기지 않는다)
+    fixed_finish: date | None = None
     successors: list["Edge"] = field(default_factory=list)
     predecessors: list["Edge"] = field(default_factory=list)
 
@@ -98,6 +101,12 @@ class CPMNetwork:
                             max_finish = candidate
                     node.earliest_start = max_finish or self.cal.next_workday(date.today())
             node.earliest_finish = self.cal.add_workdays(node.earliest_start, self._duration_days(node) - 1)
+            if node.fixed_finish is not None:
+                # 이미 끝난 작업: 계획/선행과 무관하게 실제 종료일에 고정한다.
+                node.earliest_finish = node.fixed_finish
+                node.earliest_start = self.cal.add_workdays(
+                    node.fixed_finish, -(self._duration_days(node) - 1)
+                )
             if project_ef is None or node.earliest_finish > project_ef:
                 project_ef = node.earliest_finish
         return project_ef or self.cal.next_workday(date.today())

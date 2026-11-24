@@ -22,6 +22,12 @@ class UserCalendarSpec:
     daily_work_hours: float = 8.0
     exceptions: dict[date, float] = field(default_factory=dict)  # date -> available hours (0 = 부재)
 
+    def hours_on(self, d: date, fallback: float) -> float:
+        """해당 날짜의 개인 가용시간(휴가/반차 반영). 프로젝트 상한을 넘지 않는다."""
+        if d in self.exceptions:
+            return max(0.0, self.exceptions[d])
+        return max(0.0, min(fallback, self.daily_work_hours))
+
 
 WEEKDAY_INDEX = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
 

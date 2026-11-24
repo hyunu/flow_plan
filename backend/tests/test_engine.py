@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from app.engine.calendar import ProjectCalendarSpec, UserCalendarSpec, WorkingCalendar
 from app.engine.cpm import Edge, TaskNode, build_network
@@ -95,9 +95,10 @@ def test_cycle_detection():
 
 
 # ---------- Schedule Engine ----------
-def _task(id, start, end, workload, progress, status="in_progress", assignee=(1, 0)):
+def _task(id, start, end, workload, progress, status="in_progress", assignee=(1, 0), actual_end=None):
     return EngineTaskInput(id=id, plan_start=start, plan_end=end, workload=workload,
-                           effective_progress=progress, status=status, assignments=[assignee])
+                           effective_progress=progress, status=status, assignments=[assignee],
+                           actual_end=actual_end)
 
 
 def test_schedule_engine_deterministic():
@@ -133,9 +134,9 @@ def test_schedule_engine_no_dependencies_independent():
     assert t2.delay_days >= 0
 
 
-def test_completed_task_drops_forecast_drift():
-    """완료 태스크는 남은 작업이 없으므로 예측 네트워크에서 제외되어,
-    완료 태스크 자체와 후속 태스크에 선행 지연이 전파되지 않는다."""
+def test_completed_task_keeps_dependency():
+    """완료 태스크는 '실제 종료일 고정 노드'로 예측망에 남아 후속 의존성을 유지한다.
+    (예전에는 예측망에서 제외되어 후속이 선행보다 먼저 시작할 수 있었다)"""
     cal = _cal()
     tasks = [
         _task(1, date(2026, 9, 1), date(2026, 9, 2), 48, 50, status="in_progress"),
@@ -143,12 +144,109 @@ def test_completed_task_drops_forecast_drift():
         _task(3, date(2026, 9, 15), date(2026, 9, 17), 24, 0, status="in_progress"),
     ]
     deps = [(1, 2, "FS", 0), (2, 3, "FS", 0)]
-    # task1: 오늘(09-02) 50%, 남은 24h → 09-04까지 → 계획(09-02)보다 지연 발생
     r = run_schedule_engine(tasks, deps, cal, today=date(2026, 9, 2))
-    t1 = next(t for t in r.tasks if t.task_id == 1)
-    assert t1.delay_days > 0  # 진행 중 태스크는 여전히 지연
     t2 = next(t for t in r.tasks if t.task_id == 2)
-    assert t2.forecast_finish == date(2026, 9, 10)  # plan_end, 선행 지연 미전파
+    assert t2.forecast_finish == date(2026, 9, 10)  # 실제/계획 종료일에 고정
     assert t2.delay_days == 0
     t3 = next(t for t in r.tasks if t.task_id == 3)
-    assert t3.forecast_finish == date(2026, 9, 17)  # 완료 태스크를 통한 드리프트 배제
+    # 후속은 완료 태스크(09-10) 다음 작업일(09-11) 이후에만 시작할 수 있다
+    assert t3.forecast_finish is not None and t3.forecast_finish >= date(2026, 9, 11)
+
+
+def test_early_completion_pulls_successor_earlier():
+    """조기 완료(actual_end < plan_end)가 후속/프로젝트 예측을 앞당긴다."""
+    cal = _cal()
+    tasks = [
+        _task(1, date(2026, 9, 1), date(2026, 9, 10), 24, 100, status="completed"),
+        _task(2, date(2026, 9, 11), date(2026, 9, 15), 24, 0),
+    ]
+    deps = [(1, 2, "FS", 0)]
+
+    on_time = run_schedule_engine(tasks, deps, cal, today=date(2026, 9, 1))
+    early_tasks = [
+        _task(1, date(2026, 9, 1), date(2026, 9, 10), 24, 100, status="completed",
+              actual_end=date(2026, 9, 3)),
+        _task(2, date(2026, 9, 11), date(2026, 9, 15), 24, 0),
+    ]
+    early = run_schedule_engine(early_tasks, deps, cal, today=date(2026, 9, 1))
+
+    t2_on = next(t for t in on_time.tasks if t.task_id == 2)
+    t2_early = next(t for t in early.tasks if t.task_id == 2)
+    assert t2_early.forecast_finish < t2_on.forecast_finish
+    assert early.project_forecast_finish < on_time.project_forecast_finish
+
+
+def test_user_leave_extends_forecast():
+    """담당자 휴가(개인 캘린더)가 예측 종료일을 늦춘다."""
+    cal = _cal()
+    tasks = [_task(1, date(2026, 9, 1), date(2026, 9, 3), 24, 0, assignee=(1, 24))]
+    no_leave = run_schedule_engine(tasks, [], cal, today=date(2026, 9, 1))
+    leave = UserCalendarSpec(
+        daily_work_hours=8.0,
+        exceptions={date(2026, 9, 2) + timedelta(days=i): 0.0 for i in range(10)},
+    )
+    with_leave = run_schedule_engine(tasks, [], cal, {1: leave}, today=date(2026, 9, 1))
+    t_no = next(t for t in no_leave.tasks if t.task_id == 1)
+    t_leave = next(t for t in with_leave.tasks if t.task_id == 1)
+    assert t_leave.forecast_finish > t_no.forecast_finish
+
+
+def test_multiple_assignees_shorten_forecast():
+    """담당자 2명이면 같은 작업량을 더 빨리 끝낸다(동시성 반영)."""
+    cal = _cal()
+    one = [_task(1, date(2026, 9, 1), date(2026, 9, 7), 48, 0, assignee=(1, 48))]
+    two = [_task(1, date(2026, 9, 1), date(2026, 9, 7), 48, 0, assignee=(1, 24))]
+    r1 = run_schedule_engine(one, [], cal, today=date(2026, 9, 1))
+    # 같은 태스크에 담당자 두 명
+    t = two[0]
+    t.assignments = [(1, 24), (2, 24)]
+    r2 = run_schedule_engine(two, [], cal, today=date(2026, 9, 1))
+    f1 = next(x for x in r1.tasks if x.task_id == 1).forecast_finish
+    f2 = next(x for x in r2.tasks if x.task_id == 1).forecast_finish
+    assert f2 < f1
+
+
+def test_forecast_critical_differs_from_plan():
+    """계획에서는 여유가 있던 태스크도 지연되면 예측 임계경로에 들어온다."""
+    cal = _cal()
+    tasks = [
+        _task(1, date(2026, 9, 1), date(2026, 9, 3), 24, 0),
+        _task(2, date(2026, 9, 1), date(2026, 9, 2), 24, 0),
+    ]
+    # task2 작업량을 크게 늘려 지연시킨다(계획상으로는 여유 태스크)
+    tasks[1] = _task(2, date(2026, 9, 1), date(2026, 9, 2), 240, 0)
+    r = run_schedule_engine(tasks, [], cal, today=date(2026, 9, 1))
+    t2 = next(t for t in r.tasks if t.task_id == 2)
+    assert t2.is_critical is False          # 계획 기준으로는 임계 아님
+    assert t2.forecast_is_critical is True   # 실제 지연 반영 시 임계
+    assert 2 in r.forecast_critical_path_ids
+    assert t2.delay_days > 0
+
+
+def test_parent_aggregates_does_not_mutate_entities():
+    """부모 집계는 계산만 하고 엔티티를 변이하지 않는다(조회 중 저장 방지)."""
+    from types import SimpleNamespace
+    from app.services.schedule_service import parent_aggregates
+
+    parent = SimpleNamespace(
+        id=10, parent_id=None, workload=100, effective_progress=10,
+        progress_is_manual=False, plan_start=date(2026, 9, 1), plan_end=date(2026, 9, 30),
+    )
+    child_a = SimpleNamespace(
+        id=11, parent_id=10, workload=24, effective_progress=100,
+        progress_is_manual=False, plan_start=date(2026, 9, 2), plan_end=date(2026, 9, 5),
+    )
+    child_b = SimpleNamespace(
+        id=12, parent_id=10, workload=24, effective_progress=0,
+        progress_is_manual=False, plan_start=date(2026, 9, 8), plan_end=date(2026, 9, 12),
+    )
+    tasks = [parent, child_a, child_b]
+    aggs = parent_aggregates(tasks)
+
+    assert aggs[10][0] == 50.0                      # 작업량 가중 평균 진척률
+    assert aggs[10][1] == date(2026, 9, 2)          # min(자식 시작)
+    assert aggs[10][2] == date(2026, 9, 12)         # max(자식 종료)
+    # 원본은 그대로
+    assert parent.effective_progress == 10
+    assert parent.plan_start == date(2026, 9, 1)
+    assert parent.plan_end == date(2026, 9, 30)
