@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.base import AIProvider
 from app.ai.providers import get_ai_provider
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.engine.schedule import ScheduleResult, TaskResult
 from app.models.entities import (
@@ -678,7 +679,7 @@ def generate_daily_report(db: Session, user: User, today: date | None = None) ->
 
     content = "\n".join(blocks).strip()
     provider = get_ai_provider()
-    if provider.name != "mock":
+    if settings.ai_report_polish and provider.name != "mock":
         try:
             polished = provider.generate(
                 f"아래 일일 리포트를 같은 숫자로 한국어 마크다운만 다듬으세요. 섹션을 빼지 마세요. "
@@ -784,7 +785,7 @@ def generate_weekly_report(db: Session, project: Project, week_start: date | Non
         ]
     )
     provider = get_ai_provider()
-    if provider.name != "mock":
+    if settings.ai_report_polish and provider.name != "mock":
         try:
             polished = provider.generate(
                 f"아래 주간 리포트를 같은 숫자로 한국어 마크다운만 다듬으세요. 섹션을 빼지 마세요.\n\n{content}",

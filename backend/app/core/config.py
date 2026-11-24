@@ -19,6 +19,8 @@ class Settings(BaseSettings):
 
     # AI Provider
     ai_provider: str = "openai"  # openai | anthropic | clova | gemini | mock
+    # 리포트/챌린지 문구를 AI로 다듬을지. 기본 꺼짐(숫자 변형 위험·호출량 절약).
+    ai_report_polish: bool = False
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     anthropic_api_key: str | None = None
