@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import date, datetime, timedelta
 
@@ -32,6 +33,8 @@ from app.models.entities import (
     WeeklyReport,
 )
 from app.services.schedule_service import compute_project_schedule
+
+log = logging.getLogger("flow_plan.ai")
 
 CRITICAL, WARNING, ATTENTION, NORMAL = "CRITICAL", "WARNING", "ATTENTION", "NORMAL"
 
@@ -850,11 +853,19 @@ def analyze_project_risk(db: Session, project: Project) -> AIAnalysis:
         except Exception:
             raw = ""
         parsed = _parse_ai_brief(_strip_json_fence(raw))
-        if parsed and _numbers_preserved(facts, json.dumps(parsed, ensure_ascii=False)):
-            content = json.dumps(parsed, ensure_ascii=False)
+        body = json.dumps(parsed, ensure_ascii=False) if parsed else ""
+        if parsed and _numbers_preserved(facts, body):
+            content = body
             basis = "ai"
         else:
             basis = "deterministic-fallback"
+            if not raw:
+                log.warning("AI 브리핑 응답 없음 provider=%s", provider.name)
+            elif not parsed:
+                log.warning("AI 브리핑 JSON 파싱 실패: %s", raw[:200])
+            else:
+                extra = sorted(_figures(body) - _figures(facts))[:10]
+                log.warning("AI 브리핑 숫자 검증 실패 extra=%s", extra)
 
     analysis = AIAnalysis(
         project_id=project.id,
