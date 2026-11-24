@@ -61,9 +61,14 @@ def notice_title_from_body(body: str, fallback: str = "오늘의 챌린지를 �
 
 
 def _figures(text: str) -> set[str]:
-    """날짜와 두 자리 이상 숫자만 뽑는다(문장부호·순번 같은 잡음 제외)."""
+    """날짜와 두 자리 이상 숫자만 뽑는다(표기 차이는 정규화)."""
+    norm = re.sub(
+        r"(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})",
+        lambda m: f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}",
+        text or "",
+    )
     out: set[str] = set()
-    for m in re.findall(r"\d{4}-\d{2}-\d{2}|\d+(?:\.\d+)?", text or ""):
+    for m in re.findall(r"\d{4}-\d{2}-\d{2}|\d+(?:\.\d+)?", norm):
         if "-" in m or len(m.replace(".", "")) >= 2:
             out.add(m)
     return out
@@ -817,20 +822,21 @@ def analyze_project_risk(db: Session, project: Project) -> AIAnalysis:
     if provider.name != "mock":
         delayed_n = len([t for t in result.tasks if t.delay_days > 0 and t.status != "completed"])
         issue_n = db.query(Task).filter_by(project_id=project.id, is_issue=True, is_deleted=False).count()
+        schema = (
+            '{"basis":"ai","overall_risk":"HIGH|WARNING|NORMAL",'
+            '"headline":"한 문장","situation":"3~5문장","outlook":"1~2문장","watch_next":"한 문장",'
+            '"risks":[{"task_id":0,"task_title":"","risk":"","severity":"CRITICAL|WARNING|ATTENTION","type":"system_calc"}],'
+            '"recommendations":[{"task_id":0,"task_title":"","action":""}]}'
+        )
         prompt = (
-            f"아래 프로젝트 데이터를 근거로 관리자·담당자가 바로 움직일 수 있는 브리핑을 작성하세요.\n"
-            f"JSON만 반환하세요(마크다운 코드블록 없이).\n"
-            f"- basis: \"ai\"\n"
-            f"- overall_risk: HIGH/WARNING/NORMAL 중 하나\n"
-            f"- headline: 한 문장(숫자 포함, 예: 예상 완료 2027-04-16, 계획보다 58일 지연)\n"
-            f"- situation: 3~5문장. 진척 Gap, 지연 Task {delayed_n}건, Issue {issue_n}건, "
-            f"예측 임계경로가 완료일을 며칠 미는지 명시\n"
-            f"- outlook: 1~2문장. 엔진 예상 완료일과 다음 주 리스크\n"
-            f"- watch_next: 이번 주에 확인할 한 가지(가능하면 지연 중인 임계 태스크명)\n"
-            f"- risks: [{{'task_id': 번호, 'task_title': '제목', 'risk': '왜 위험한지+일정 영향 일수', "
-            f"'severity': 'CRITICAL|WARNING|ATTENTION', 'type': 'system_calc|user_opinion|ai_prediction'}}] 최대 8개\n"
-            f"- recommendations: [{{'task_id': 번호, 'task_title': '제목', 'action': '누가 무엇을 오늘/이번 주에 할지'}}] 최대 6개\n"
-            f"규칙: 근거 데이터에 없는 숫자·날짜·태스크를 만들지 말 것. 추측은 type=ai_prediction.\n\n{facts}"
+            "아래 데이터를 근거로 관리자·담당자가 바로 움직일 수 있는 프로젝트 현황 브리핑을 작성하세요.\n"
+            "출력은 아래 JSON 객체 **하나만**입니다. 키 이름을 바꾸지 말고, 코드블록·설명을 붙이지 마세요.\n"
+            f"{schema}\n"
+            f"내용 규칙: 지연 Task {delayed_n}건, Issue {issue_n}건을 반영. "
+            "headline에는 예상 완료일과 지연 일수를 넣고, situation에는 진척 Gap과 임계경로 영향을 넣으세요. "
+            "risks 최대 8개(임계경로 지연 우선), recommendations 최대 6개(누가 무엇을 오늘/이번 주에). "
+            "**근거 데이터에 없는 숫자·날짜·태스크를 만들지 마세요.** 추측은 type=ai_prediction.\n\n"
+            f"{facts}"
         )
         try:
             raw = provider.generate(
