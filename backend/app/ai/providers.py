@@ -104,6 +104,11 @@ class GeminiProvider(AIProvider):
             time.sleep(delay)
 
         if resp is None or resp.status_code >= 400:
+            # 404: 이 키/모델은 generateContent 가 막혀 있고 Interactions API 만 허용되는 경우가 있다.
+            if resp is not None and resp.status_code in (404, 405):
+                text = self._generate_interactions(prompt, system)
+                if text:
+                    return text
             raise RuntimeError(f"Gemini API 오류({resp.status_code if resp else '?'}): {resp.text[:300] if resp else ''}")
         data = resp.json()
         try:
@@ -117,6 +122,35 @@ class GeminiProvider(AIProvider):
         if m:
             text = m.group(1)
         return text.strip()
+
+    def _generate_interactions(self, prompt: str, system: str | None) -> str:
+        """Gemini Interactions API 폴백 (신규 API 키는 이 경로만 허용되기도 한다)."""
+        import httpx
+
+        text_input = f"{system}\n\n{prompt}" if system else prompt
+        payload = {"model": self.model, "input": text_input}
+        try:
+            resp = httpx.post(
+                f"{self.BASE}/interactions",
+                headers={"x-goog-api-key": self.api_key},
+                json=payload,
+                timeout=settings.ai_timeout_seconds,
+            )
+        except Exception:
+            return ""
+        if resp.status_code >= 400:
+            return ""
+        try:
+            data = resp.json()
+        except Exception:
+            return ""
+        for step in data.get("steps", []) or []:
+            if step.get("type") == "model_output":
+                parts = step.get("content", []) or []
+                text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+                if text.strip():
+                    return text.strip()
+        return ""
 
 
 def get_ai_provider() -> AIProvider:
