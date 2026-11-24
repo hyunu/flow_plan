@@ -44,6 +44,7 @@ class TaskResult:
     free_float: float = 0.0
     is_critical: bool = False
     forecast_finish: date | None = None
+    plan_end: date | None = None
     delay_days: int = 0
     status: str = "not_started"
     # 예측 네트워크 기준 지표 — 실제 지연이 반영된 임계경로/여유
@@ -381,6 +382,7 @@ def run_schedule_engine(
                 free_float=round(node.free_float, 1) if node else 0.0,
                 is_critical=is_critical,
                 forecast_finish=fnode.earliest_finish if fnode else t.plan_end,
+                plan_end=t.plan_end,
                 delay_days=delay_days,
                 status=t.status,
                 forecast_total_float=round(forecast_total_float, 1),

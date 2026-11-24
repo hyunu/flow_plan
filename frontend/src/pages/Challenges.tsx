@@ -12,6 +12,7 @@ export function Challenges() {
   const [challenges, setChallenges] = useState<Challenge[]>([])
   const [loading, setLoading] = useState(true)
   const [responses, setResponses] = useState<Record<number, string>>({})
+  const [showAll, setShowAll] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -37,9 +38,12 @@ export function Challenges() {
   }
 
   const order: Record<string, number> = { CRITICAL: 0, WARNING: 1, ATTENTION: 2, NORMAL: 3 }
+  // 서버가 위험도 순으로 내려준다. 화면에는 상위 7개만 보이고 나머지는 접는다.
   const open = [...challenges]
-    .filter((c) => c.status !== 'answered')
+    .filter((c) => c.status === 'open')
     .sort((a, b) => (order[a.priority] ?? 9) - (order[b.priority] ?? 9))
+  const TOP = 7
+  const visible = showAll ? open : open.slice(0, TOP)
 
   const answerHint: Record<string, string> = {
     issue: '해결했는지, 새 예정일(YYYY-MM-DD)을 적으세요.\n막힌 후속이 있으면 그 이름도 적으세요.',
@@ -94,7 +98,7 @@ export function Challenges() {
         </div>
       ) : (
         <div className="space-y-3">
-          {open.map((c) => (
+          {visible.map((c) => (
             <div key={c.id} className={`card p-5 ${toneCard[c.priority] || ''}`}>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
@@ -155,6 +159,16 @@ export function Challenges() {
               )}
             </div>
           ))}
+          {open.length > TOP && (
+            <div className="pt-1 text-center">
+              <button
+                onClick={() => setShowAll((v) => !v)}
+                className="btn-ghost text-[13px] text-slate-500 hover:text-ink-700"
+              >
+                {showAll ? '접기' : `모두 보기 (${open.length - TOP}개 더)`}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

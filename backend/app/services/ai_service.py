@@ -25,6 +25,7 @@ from app.models.entities import (
     DailyReport,
     Forecast,
     Notification,
+    ProgressSnapshot,
     Project,
     Task,
     User,
@@ -125,6 +126,7 @@ def generate_user_challenges(
     provider: AIProvider | None = get_ai_provider() if polish else None
     memberships = user.memberships
     created: list[Challenge] = []
+    active_keys: set[tuple[int | None, str]] = set()
     role = user.role.name if user.role else ""
     member_only = role == "Project Member"
 
@@ -157,6 +159,7 @@ def generate_user_challenges(
             if composed is None:
                 continue
             priority, category, message = composed
+            active_keys.add((task.id, category))
             exists = (
                 db.query(Challenge)
                 .filter_by(user_id=user.id, task_id=task.id, category=category, status="open")
@@ -225,8 +228,28 @@ def generate_user_challenges(
                     link=f"/tasks/{task.id}",
                 )
             )
+    # 더 이상 해당되지 않는(해결·조건 소멸) 열린 챌린지는 만료 처리한다.
+    stale = db.query(Challenge).filter_by(user_id=user.id, status="open").all()
+    for ch in stale:
+        if (ch.task_id, ch.category) not in active_keys:
+            ch.status = "expired"
+
     db.commit()
     return created
+
+
+def generate_all_daily_reports(db: Session, today: date | None = None) -> int:
+    """모든 활성 사용자의 일일 리포트를 생성/갱신한다(스케줄러용)."""
+    today = today or date.today()
+    users = db.query(User).filter(User.is_active.is_(True)).all()
+    count = 0
+    for u in users:
+        try:
+            generate_daily_report(db, u, today)
+            count += 1
+        except Exception:
+            db.rollback()
+    return count
 
 
 def sync_challenge_notifications(db: Session, user: User) -> None:
@@ -287,13 +310,16 @@ def _compose_challenge(
     team_view: bool,
 ) -> tuple[str, str, str] | None:
     """태스크마다 다른 본문. 제목·일수·진척·원인 유무·요청이 카드마다 달라지게 한다."""
+    if t.status == "completed":
+        return None
     title = task.title.strip() or f"Task #{task.id}"
     owners = ", ".join(a.user.name for a in task.assignments if a.user) or "미배정"
     who = f"{owners} 담당. " if team_view else ""
     planned = result.project_planned_finish.isoformat() if result.project_planned_finish else "미정"
     forecast = result.project_forecast_finish.isoformat() if result.project_forecast_finish else "미정"
     proj_delay = result.expected_delay_days
-    slack = int(round(t.total_float or 0))
+    # 실제 지연이 반영된 예측 기준 여유 (계획 기준 float 는 지연을 모른다)
+    slack = int(round(t.forecast_total_float if t.forecast_is_critical else t.total_float or 0))
     updates = sorted(task.progress_updates, key=lambda p: p.created_at or datetime.min, reverse=True)
     last = updates[0] if updates else None
     has_cause = bool(last and (last.delay_cause or last.delay_cause_category))
@@ -301,10 +327,7 @@ def _compose_challenge(
     last_cause = (last.delay_cause_category or last.delay_cause) if last else None
     gap = round((t.schedule_progress or 0) - (t.effective_progress or 0), 1)
     extra_days_help = (
-        "태스크 상세 → 진행 기록의 **예상 추가 일수**에 숫자를 적으세요. "
-        "대응/대책을 실행한 뒤에도 **계획 종료일보다 며칠 더 늦어질지**입니다. "
-        f"예: 지금 {t.delay_days}일 늦은 상태인데 대책 후에도 8일은 남을 것 같으면 **8**. "
-        "챌린지 아래 답변 칸이 아니라 진행 기록에 적어야 일정에 반영됩니다."
+        "대책 후에도 계획일보다 며칠 더 늦을지(**예상 추가 일수**)는 진행 기록에 숫자로 남기세요."
     )
 
     if task.is_issue and task.issue_resolve_plan_date and task.issue_resolve_plan_date < today and task.status != "completed":
@@ -318,7 +341,7 @@ def _compose_challenge(
             f"오늘 **해결 여부·새 예정일**을 진행 기록에 남기세요.",
         )
 
-    if t.is_critical and t.delay_days > 0:
+    if t.forecast_is_critical and t.delay_days > 0:
         if has_cause and not has_plan:
             ask = f"원인으로 ‘{last_cause}’가 있습니다. 대응/대책과 함께 {extra_days_help}"
         elif has_cause and has_plan:
@@ -333,12 +356,12 @@ def _compose_challenge(
         return (
             CRITICAL,
             "critical_delay",
-            f"**「{title}」**은 **크리티컬 패스**입니다. {who}"
+            f"**「{title}」**은 **예측 임계경로**입니다. {who}"
             f"이 노드만 **{t.delay_days}일** 늦고 **여유 0일**이라, 후속과 프로젝트 종료일(계획 {planned} → 예측 {forecast}, **전체 +{proj_delay}일**)에 그대로 전가됩니다. "
             f"{ask}",
         )
 
-    if t.is_critical and t.delay_days == 0 and t.status == "in_progress":
+    if t.forecast_is_critical and t.delay_days == 0 and t.status == "in_progress":
         return (
             WARNING,
             "critical_progress",
@@ -397,7 +420,7 @@ def _bullet_tasks(tasks: list[TaskResult], limit: int = 8) -> str:
         return "- 해당 없음"
     lines = []
     for t in tasks[:limit]:
-        tag = " · 크리티컬 패스" if t.is_critical else ""
+        tag = " · 임계경로" if t.forecast_is_critical else ""
         delay = f" · {t.delay_days}일 지연" if t.delay_days else ""
         lines.append(f"- 「{t.title}」{tag}{delay} · 진척 {t.effective_progress:.0f}%")
     if len(tasks) > limit:
@@ -422,8 +445,8 @@ def generate_daily_report(db: Session, user: User, today: date | None = None) ->
     for project, only_my in project_rows:
         result = compute_project_schedule(db, project, today)
         tasks = [t for t in result.tasks if _task_owned_by(db, t.task_id, user.id)] if only_my else list(result.tasks)
-        delayed = [t for t in tasks if t.delay_days > 0]
-        critical = [t for t in tasks if t.is_critical]
+        delayed = [t for t in tasks if t.delay_days > 0 and t.status != "completed"]
+        critical = [t for t in tasks if t.forecast_is_critical]
         delayed_cp = [t for t in critical if t.delay_days > 0]
         in_progress = [t for t in tasks if t.status == "in_progress"]
         issues = db.query(Task).filter_by(project_id=project.id, is_issue=True, is_deleted=False).all()
@@ -435,15 +458,44 @@ def generate_daily_report(db: Session, user: User, today: date | None = None) ->
             state = f"완료 예측이 계획보다 {result.expected_delay_days}일 늦음 ({result.project_planned_finish} → {result.project_forecast_finish})."
         else:
             state = f"완료 예측은 계획일({result.project_planned_finish}) 안입니다."
+        snap = (
+            db.query(ProgressSnapshot)
+            .filter_by(project_id=project.id, snapshot_date=today - timedelta(days=1))
+            .first()
+        )
+        if snap:
+            delta = result.actual_progress - (snap.actual_progress or 0)
+            yesterday_line = (
+                f"- 실제 진척 {snap.actual_progress:.0f}% → {result.actual_progress:.0f}% ({delta:+.1f}%p) / "
+                f"계획 {snap.plan_progress:.0f}% → {result.plan_progress:.0f}%"
+            )
+        else:
+            yesterday_line = "- 어제 진척 스냅샷이 없습니다."
+
+        today_due = [
+            t for t in tasks
+            if t.plan_end == today and t.status != "completed"
+        ]
+        due_text = (
+            "\n".join(f"- 「{t.title}」 · 진척 {t.effective_progress:.0f}%" for t in today_due[:8])
+            or "- 오늘 마감 태스크 없음"
+        )
+
         blocks += [
             f"## {project.name}",
             f"실제 진척 {result.actual_progress:.0f}% / 계획 {result.plan_progress:.0f}% (Gap {result.progress_gap:g}%p). {state}",
             "",
+            "### 어제 대비",
+            yesterday_line,
+            "",
+            "### 오늘 마감",
+            due_text,
+            "",
             "### 지연",
             _bullet_tasks(sorted(delayed, key=lambda x: -x.delay_days)),
             "",
-            "### 크리티컬 패스",
-            _bullet_tasks(critical),
+            "### 예측 임계경로",
+            _bullet_tasks(sorted(critical, key=lambda x: (-(x.delay_days or 0), -(x.forecast_total_float or 0)))),
             "",
             "### 미해결 이슈",
             ("\n".join(f"- 「{i.title}」 · 예정 {i.issue_resolve_plan_date or '-'}" for i in open_issues[:8]) or "- 해당 없음"),
@@ -453,7 +505,7 @@ def generate_daily_report(db: Session, user: User, today: date | None = None) ->
         todos = []
         for t in delayed_cp[:5]:
             todos.append(
-                f"- 「{t.title}」(크리티컬 패스, {t.delay_days}일 지연): "
+                f"- 「{t.title}」(예측 임계, {t.delay_days}일 지연): "
                 f"왜 늦었는지, 어떻게 맞출지, 대책 후에도 계획일보다 며칠 더 늦을지(예상 추가 일수)를 태스크 상세 진행 기록에 적기"
             )
         for t in delayed:
@@ -510,8 +562,8 @@ def generate_daily_report(db: Session, user: User, today: date | None = None) ->
 def generate_weekly_report(db: Session, project: Project, week_start: date | None = None) -> WeeklyReport:
     week_start = week_start or (date.today() - timedelta(days=date.today().weekday()))
     result = compute_project_schedule(db, project, date.today())
-    delayed = [t for t in result.tasks if t.delay_days > 0]
-    critical = [t for t in result.tasks if t.is_critical]
+    delayed = [t for t in result.tasks if t.delay_days > 0 and t.status != "completed"]
+    critical = [t for t in result.tasks if t.forecast_is_critical]
     delayed_cp = [t for t in critical if t.delay_days > 0]
     issues = db.query(Task).filter_by(project_id=project.id, is_issue=True, is_deleted=False).all()
     open_issues = [i for i in issues if i.status != "completed"]
@@ -533,7 +585,7 @@ def generate_weekly_report(db: Session, project: Project, week_start: date | Non
         summary = (
             f"{project.name} 완료 예측이 계획보다 {result.expected_delay_days}일 늦습니다 "
             f"({result.project_planned_finish} → {result.project_forecast_finish}). "
-            f"늦은 크리티컬 패스 {len(delayed_cp)}건이 종료일을 밀어 올리고 있습니다."
+            f"예측 임계경로 중 {len(delayed_cp)}건이 종료일을 밀어 올리고 있습니다."
         )
     else:
         summary = (
@@ -551,12 +603,15 @@ def generate_weekly_report(db: Session, project: Project, week_start: date | Non
             "## KPI",
             f"- 실제 진척 {result.actual_progress:.0f}% / 계획 {result.plan_progress:.0f}% / Gap {result.progress_gap:g}%p",
             f"- 예상 지연 {result.expected_delay_days}일",
-            f"- 지연 Task {len(delayed)}건 · 크리티컬 패스 {len(critical)}건 · 미해결 이슈 {len(open_issues)}건 (해결 {len(resolved)}건)",
+            f"- 지연 Task {len(delayed)}건 · 예측 임계 {len(critical)}건 · 미해결 이슈 {len(open_issues)}건 (해결 {len(resolved)}건)",
             "",
-            "## 주요 지연",
-            _bullet_tasks(sorted(delayed, key=lambda x: -x.delay_days), 12),
+            "## 주요 지연 (임계·영향 순)",
+            _bullet_tasks(
+                sorted(delayed, key=lambda x: (not x.forecast_is_critical, -x.delay_days)),
+                12,
+            ),
             "",
-            "## 크리티컬 패스",
+            "## 예측 임계경로",
             _bullet_tasks(critical, 12),
             "",
             "## 주요 Issue",
@@ -647,7 +702,8 @@ def analyze_project_risk(db: Session, project: Project) -> AIAnalysis:
 
 def _cp_warning(t: TaskResult) -> dict:
     """카드에 없는 내용만: 여유 0일·초과분이 전체에 전가된다는 경고."""
-    slack = int(round(t.total_float or 0))
+    # 실제 지연이 반영된 예측 기준 여유 (계획 기준 float 는 지연을 모른다)
+    slack = int(round(t.forecast_total_float if t.forecast_is_critical else t.total_float or 0))
     if t.is_critical:
         if t.delay_days > 0:
             return {

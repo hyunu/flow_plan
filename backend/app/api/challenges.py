@@ -16,14 +16,19 @@ def _is_stub_message(text: str | None) -> bool:
     return t.startswith("[Mock") or "요청 맥락:" in t or "Daily Challenge 한 문장" in t
 
 
+_PRIORITY_RANK = {"CRITICAL": 0, "WARNING": 1, "ATTENTION": 2, "NORMAL": 3}
+
+
 @router.get("", response_model=list[ChallengeRead])
 def list_my_challenges(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return (
+    """열린 챌린지를 위험도 순으로 반환한다(같은 등급은 최근 생성 순)."""
+    rows = (
         db.query(Challenge)
         .filter_by(user_id=user.id, status="open")
         .order_by(Challenge.created_at.desc())
         .all()
     )
+    return sorted(rows, key=lambda c: (_PRIORITY_RANK.get(c.priority, 9), -c.id))
 
 
 @router.post("/generate", response_model=list[ChallengeRead], dependencies=[Depends(rate_limit(10, 300, "ai"))])
